@@ -1,8 +1,9 @@
+// setioryski/apptechary-app/apptechary-app-new3/server/models/Sale.js
+
 const mongoose = require('mongoose');
 
 const SaleSchema = new mongoose.Schema({
   cashierId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  // Add customer field
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: false },
   items: [{
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
@@ -12,7 +13,9 @@ const SaleSchema = new mongoose.Schema({
     quantity: { type: Number, required: true }
   }],
   totalAmount: { type: Number, required: true },
-  paymentMethod: { type: String, required: true, enum: ['Cash', 'Card', 'Digital'] },
+  paymentMethod: { type: String, enum: ['Cash', 'Card', 'Digital', 'Pending'], default: 'Pending' },
+  paymentStatus: { type: String, required: true, enum: ['Paid', 'Unpaid'], default: 'Unpaid' },
+  orderStatus: { type: String, required: true, enum: ['Pending', 'Completed', 'Served'], default: 'Pending' },
   status: { type: String, required: true, enum: ['Completed', 'Retracted'], default: 'Completed' }
 }, { timestamps: true });
 

@@ -1,12 +1,15 @@
-import React, { useState, useEffect } from 'react';
+// setioryski/apptechary-app/apptechary-app-new3/client/src/pages/POSPage.jsx
+
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import CheckoutModal from '../components/CheckoutModal';
 import InvoiceModal from '../components/InvoiceModal';
 import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
 import CustomerModal from '../components/CustomerModal';
+import ConfirmationModal from '../components/ConfirmationModal';
+import EditSaleModal from '../components/EditSaleModal'; 
 
-// New component for viewing sale details
+// Component for viewing sale details (remains the same)
 const SaleDetailsModal = ({ sale, onClose }) => {
     if (!sale) return null;
     return (
@@ -20,7 +23,7 @@ const SaleDetailsModal = ({ sale, onClose }) => {
                 </div>
                 <ul className="divide-y max-h-60 overflow-y-auto">
                     {sale.items.map(item => (
-                        <li key={item._id} className="flex justify-between py-2">
+                        <li key={item._id || item.productId} className="flex justify-between py-2">
                             <span>{item.quantity}x {item.name}</span>
                             <span className="font-semibold">Rp{(item.price * item.quantity).toLocaleString('id-ID')}</span>
                         </li>
@@ -46,22 +49,21 @@ const POSPage = () => {
     const [loading, setLoading] = useState(true);
     const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
     const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+    const [isConfirmOrderOpen, setIsConfirmOrderOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingSale, setEditingSale] = useState(null);
     const [completedSale, setCompletedSale] = useState(null);
+    const [saleToPay, setSaleToPay] = useState(null);
     const { showToast } = useToast();
-    const { user } = useAuth();
-
     const [customers, setCustomers] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
-    const [customerSearchTerm, setCustomerSearchTerm] = useState('');
-
     const [todaysSales, setTodaysSales] = useState([]);
     const [todaysRevenue, setTodaysRevenue] = useState(0);
     const [loadingSales, setLoadingSales] = useState(true);
     const [viewingSale, setViewingSale] = useState(null);
 
-
-    const fetchTodaysSales = async () => {
+    const fetchTodaysSales = useCallback(async () => {
         setLoadingSales(true);
         try {
             const { data } = await api.get('/sales/today');
@@ -73,35 +75,35 @@ const POSPage = () => {
         } finally {
             setLoadingSales(false);
         }
-    };
-
-    useEffect(() => {
-        const fetchProducts = async () => {
-            try {
-                const { data } = await api.get('/products');
-                setProducts(data);
-            } catch (error) {
-                console.error("Failed to fetch products", error);
-                showToast('Error fetching products', 'error');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        const fetchCustomers = async () => {
-            try {
-                const { data } = await api.get('/customers');
-                setCustomers(data);
-            } catch (error) {
-                console.error("Failed to fetch customers", error);
-                showToast('Error fetching customers', 'error');
-            }
-        };
-
-        fetchProducts();
-        fetchCustomers();
-        fetchTodaysSales();
     }, [showToast]);
+
+    const fetchInitialData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [productsRes, customersRes] = await Promise.all([
+                api.get('/products'),
+                api.get('/customers')
+            ]);
+            setProducts(productsRes.data);
+            setCustomers(customersRes.data);
+        } catch (error) {
+            console.error("Failed to fetch initial data", error);
+            showToast('Error fetching page data', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [showToast]);
+    
+    useEffect(() => {
+        fetchInitialData();
+        fetchTodaysSales();
+    }, [fetchInitialData, fetchTodaysSales]);
+    
+    const resetCart = () => {
+        setCart([]);
+        setSelectedCustomer(null);
+        setSearchTerm('');
+    }
 
     const addToCart = (product) => {
         if (product.stock <= 0) {
@@ -126,53 +128,113 @@ const POSPage = () => {
 
     const updateQuantity = (productId, newQuantity) => {
         setCart(currentCart => {
-            const productInCart = currentCart.find(item => item._id === productId);
             const productInfo = products.find(p => p._id === productId);
-
             if (newQuantity <= 0) {
                 return currentCart.filter(item => item._id !== productId);
             }
-
             if (newQuantity > productInfo.stock) {
                 showToast(`Maximum stock for ${productInfo.name} is ${productInfo.stock}.`, 'error');
                 return currentCart.map(item =>
                     item._id === productId ? { ...item, quantity: productInfo.stock } : item
                 );
             }
-
             return currentCart.map(item =>
                 item._id === productId ? { ...item, quantity: newQuantity } : item
             );
         });
     };
 
-    const handleConfirmCheckout = async (paymentMethod) => {
+    const handlePlaceOrder = () => {
+        if (cart.length > 0) {
+            setIsConfirmOrderOpen(true);
+        } else {
+            showToast('Cart is empty', 'error');
+        }
+    };
+    
+    const handlePayLater = async () => {
+        setIsConfirmOrderOpen(false);
         const saleData = {
-            items: cart.map(({ _id, name, price, basePrice, quantity }) => ({
-                productId: _id,
-                name,
-                price,
-                basePrice,
-                quantity
-            })),
-            totalAmount,
-            paymentMethod,
+            items: cart.map(({ _id, name, price, basePrice, quantity }) => ({ productId: _id, name, price, basePrice, quantity })),
+            totalAmount: totalAmount,
+            paymentStatus: 'Unpaid',
             customerId: selectedCustomer ? selectedCustomer._id : null,
         };
-
         try {
-            const { data: populatedSale } = await api.post('/sales', saleData);
-            setCompletedSale(populatedSale);
-            setIsCheckoutOpen(false);
-            setIsInvoiceOpen(true);
-            setCart([]);
-            setSelectedCustomer(null);
-            setCustomerSearchTerm('');
-            showToast('Sale completed successfully!', 'success');
+            await api.post('/sales', saleData);
+            showToast('Order saved as unpaid.', 'success');
+            resetCart();
             fetchTodaysSales();
+            fetchInitialData();
         } catch (error) {
-            console.error("Failed to create sale", error);
-            showToast(error.response?.data?.message || 'Failed to complete sale.', 'error');
+            showToast(error.response?.data?.message || 'Failed to save order.', 'error');
+        }
+    };
+
+    const handlePayNow = () => {
+        setIsConfirmOrderOpen(false);
+        setIsCheckoutOpen(true);
+    };
+
+    const handleConfirmCheckout = async (paymentMethod) => {
+        if (saleToPay) {
+            try {
+                await api.put(`/sales/${saleToPay._id}/pay`, { paymentMethod });
+                showToast('Payment successful!', 'success');
+                const { data } = await api.get(`/sales/${saleToPay._id}`);
+                setCompletedSale(data);
+                setIsInvoiceOpen(true);
+            } catch (error) {
+                showToast(error.response?.data?.message || 'Payment failed.', 'error');
+            } finally {
+                setIsCheckoutOpen(false);
+                setSaleToPay(null);
+                fetchTodaysSales();
+                fetchInitialData();
+            }
+        } else {
+            const saleData = {
+                items: cart.map(({ _id, name, price, basePrice, quantity }) => ({ productId: _id, name, price, basePrice, quantity })),
+                totalAmount: totalAmount,
+                paymentMethod,
+                paymentStatus: 'Paid',
+                customerId: selectedCustomer ? selectedCustomer._id : null,
+            };
+            try {
+                const { data: populatedSale } = await api.post('/sales', saleData);
+                setCompletedSale(populatedSale);
+                setIsInvoiceOpen(true);
+                resetCart();
+                fetchTodaysSales();
+                fetchInitialData();
+            } catch (error) {
+                showToast(error.response?.data?.message || 'Failed to complete sale.', 'error');
+            } finally {
+                 setIsCheckoutOpen(false);
+            }
+        }
+    };
+    
+    const handlePayForUnpaidOrder = (sale) => {
+        setSaleToPay(sale);
+        setIsCheckoutOpen(true);
+    };
+
+    const handleEditSale = (sale) => {
+        setEditingSale(sale);
+        setIsEditModalOpen(true);
+    };
+
+    const handleUpdateSale = async (saleId, updatedData) => {
+        try {
+            await api.put(`/sales/${saleId}`, updatedData);
+            showToast('Order updated successfully!', 'success');
+            setIsEditModalOpen(false);
+            setEditingSale(null);
+            fetchTodaysSales();
+            fetchInitialData();
+        } catch (error) {
+             showToast(error.response?.data?.message || 'Failed to update order.', 'error');
         }
     };
 
@@ -195,12 +257,11 @@ const POSPage = () => {
         p.sku.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    if (loading) return <div>Loading products...</div>;
+    if (loading) return <div>Loading...</div>;
 
     return (
         <>
             <div className="flex flex-col lg:flex-row h-[calc(100vh-140px)] gap-6">
-                {/* Products Section */}
                 <div className="lg:w-2/3 flex flex-col">
                     <div className="mb-4">
                         <input
@@ -224,7 +285,6 @@ const POSPage = () => {
                     </div>
                 </div>
 
-                {/* Cart & Sales Info Section */}
                 <div className="lg:w-1/3 bg-white p-4 rounded-lg shadow-sm flex flex-col">
                     <div className="border-b pb-4 mb-4">
                         <h2 className="text-xl font-bold mb-2">Customer</h2>
@@ -234,16 +294,15 @@ const POSPage = () => {
                                     <p className="font-semibold text-sky-800">{selectedCustomer.name}</p>
                                     <p className="text-xs text-sky-600">{selectedCustomer.phone}</p>
                                 </div>
-                                <button onClick={() => { setSelectedCustomer(null); setCustomerSearchTerm(''); }} className="text-red-500 font-semibold text-sm">Remove</button>
+                                <button onClick={() => { setSelectedCustomer(null);}} className="text-red-500 font-semibold text-sm">Remove</button>
                             </div>
                         ) : (
                             <div>
                                 <div className="flex gap-2">
-                                    <select 
-                                        value={customerSearchTerm}
+                                    <select
+                                        value={selectedCustomer?._id || ''}
                                         onChange={(e) => {
                                             const custId = e.target.value;
-                                            setCustomerSearchTerm(custId);
                                             setSelectedCustomer(customers.find(c => c._id === custId) || null);
                                         }}
                                         className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -288,14 +347,13 @@ const POSPage = () => {
                             <span className="text-2xl font-extrabold text-sky-700">Rp{totalAmount.toLocaleString('id-ID')}</span>
                         </div>
                         <button
-                            onClick={() => setIsCheckoutOpen(true)}
+                            onClick={handlePlaceOrder}
                             disabled={cart.length === 0}
                             className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
                         >
-                            Checkout
+                            Place Order
                         </button>
                     </div>
-                    {/* Today's Sales for Cashier */}
                     <div className="border-t pt-4 mt-4">
                         <h3 className="text-lg font-bold mb-2">Today's Sales</h3>
                         {loadingSales ? <p>Loading sales...</p> : (
@@ -316,9 +374,17 @@ const POSPage = () => {
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="font-semibold">Rp{sale.totalAmount.toLocaleString('id-ID')}</span>
-                                                        <button onClick={() => setViewingSale(sale)} className="text-blue-600 hover:underline text-xs">Details</button>
+                                                        {sale.paymentStatus === 'Unpaid' ? (
+                                                            <>
+                                                                <button onClick={() => handleEditSale(sale)} className="text-white bg-yellow-500 px-2 py-1 rounded-md hover:bg-yellow-600 text-xs">Edit</button>
+                                                                <button onClick={() => handlePayForUnpaidOrder(sale)} className="text-white bg-blue-500 px-2 py-1 rounded-md hover:bg-blue-600 text-xs">Pay</button>
+                                                            </>
+                                                        ) : (
+                                                            <button onClick={() => setViewingSale(sale)} className="text-blue-600 hover:underline text-xs">Details</button>
+                                                        )}
                                                     </div>
                                                 </div>
+                                                {sale.paymentStatus === 'Unpaid' && <span className="text-xs font-bold text-red-500">UNPAID</span>}
                                             </li>
                                         ))}
                                     </ul>
@@ -329,10 +395,26 @@ const POSPage = () => {
                 </div>
             </div>
 
+            {isConfirmOrderOpen && (
+                 <ConfirmationModal
+                    isOpen={isConfirmOrderOpen}
+                    onClose={() => setIsConfirmOrderOpen(false)}
+                    onConfirm={handlePayNow}
+                    onAlternativeAction={handlePayLater}
+                    title="Confirm Order"
+                    message={`Total amount is Rp${totalAmount.toLocaleString('id-ID')}. How would you like to proceed?`}
+                    confirmText="Pay Now"
+                    alternativeText="Pay Later"
+                />
+            )}
+
             {isCheckoutOpen && (
                 <CheckoutModal
-                    totalAmount={totalAmount}
-                    onClose={() => setIsCheckoutOpen(false)}
+                    totalAmount={saleToPay ? saleToPay.totalAmount : totalAmount}
+                    onClose={() => {
+                        setIsCheckoutOpen(false);
+                        setSaleToPay(null);
+                    }}
                     onConfirm={handleConfirmCheckout}
                 />
             )}
@@ -353,6 +435,18 @@ const POSPage = () => {
             
             {viewingSale && (
                 <SaleDetailsModal sale={viewingSale} onClose={() => setViewingSale(null)} />
+            )}
+             {isEditModalOpen && (
+                <EditSaleModal
+                    sale={editingSale}
+                    products={products}
+                    onClose={() => { setIsEditModalOpen(false); setEditingSale(null); }}
+                    onUpdate={handleUpdateSale}
+                    onProcessPayment={(sale) => {
+                        setIsEditModalOpen(false);
+                        handlePayForUnpaidOrder(sale);
+                    }}
+                />
             )}
         </>
     );

@@ -1,3 +1,5 @@
+// setioryski/apptechary-app/apptechary-app-new3/server/routes/saleRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const {
@@ -7,20 +9,25 @@ const {
   retractSale,
   getTopProducts,
   getAllSellingProducts,
-  getTodaysSales, // <-- IMPORT THIS
+  getTodaysSales,
+  updateSaleToPaid,
+  updateSale, 
 } = require('../controllers/saleController');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 
-router.route('/').post(protect, addSale).get(protect, isAdmin, getSales);
+router.route('/')
+    .post(protect, addSale)
+    .get(protect, isAdmin, getSales);
 
 router.get('/topproducts', protect, isAdmin, getTopProducts);
 router.get('/allselling', protect, isAdmin, getAllSellingProducts);
-
-// ADD THIS ROUTE for cashiers to get their daily sales
 router.get('/today', protect, getTodaysSales);
 
-router.route('/:id').get(protect, isAdmin, getSaleById);
+router.route('/:id')
+    .get(protect, getSaleById)
+    .put(protect, updateSale); 
 
 router.route('/:id/retract').put(protect, isAdmin, retractSale);
+router.route('/:id/pay').put(protect, updateSaleToPaid);
 
 module.exports = router;
