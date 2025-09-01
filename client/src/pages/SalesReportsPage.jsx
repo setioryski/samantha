@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import InvoiceModal from '../components/InvoiceModal';
 import ConfirmationModal from '../components/ConfirmationModal'; // Import the new modal
+import CheckoutModal from '../components/CheckoutModal';
 import { useToast } from '../context/ToastContext';
 
 const SalesReportsPage = () => {
@@ -10,7 +11,9 @@ const SalesReportsPage = () => {
     const [selectedSale, setSelectedSale] = useState(null);
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+    const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
     const [saleToRetractId, setSaleToRetractId] = useState(null);
+    const [saleToPay, setSaleToPay] = useState(null);
     const { showToast } = useToast();
 
     const fetchSales = useCallback(async () => {
@@ -47,6 +50,11 @@ const SalesReportsPage = () => {
         setIsConfirmModalOpen(true);
     };
 
+    const handlePayClick = (sale) => {
+        setSaleToPay(sale);
+        setIsCheckoutModalOpen(true);
+    };
+
     // The actual retract logic, called when confirm is clicked in the modal
     const confirmRetraction = async () => {
         if (!saleToRetractId) return;
@@ -63,12 +71,40 @@ const SalesReportsPage = () => {
         }
     };
 
+    const handleConfirmCheckout = async (paymentMethod) => {
+        if (!saleToPay) return;
+        try {
+            await api.put(`/sales/${saleToPay._id}/pay`, { paymentMethod });
+            showToast('Payment successful!', 'success');
+            fetchSales(); // Refresh the sales list
+            const { data } = await api.get(`/sales/${saleToPay._id}`);
+            setSelectedSale(data);
+            setIsInvoiceModalOpen(true);
+        } catch (error) {
+            showToast(error.response?.data?.message || 'Payment failed.', 'error');
+        } finally {
+            setIsCheckoutModalOpen(false);
+            setSaleToPay(null);
+        }
+    };
+
     const getStatusBadge = (status) => {
         switch (status) {
             case 'Completed':
                 return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Completed</span>;
             case 'Retracted':
                 return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Retracted</span>;
+            default:
+                return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">{status}</span>;
+        }
+    };
+
+    const getPaymentStatusBadge = (status) => {
+        switch (status) {
+            case 'Paid':
+                return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Paid</span>;
+            case 'Unpaid':
+                return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Unpaid</span>;
             default:
                 return <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">{status}</span>;
         }
@@ -89,7 +125,8 @@ const SalesReportsPage = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items Sold</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Method</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Status</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -109,8 +146,17 @@ const SalesReportsPage = () => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Rp{sale.totalAmount.toLocaleString('id-ID')}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.paymentMethod}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getPaymentStatusBadge(sale.paymentStatus)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getStatusBadge(sale.status)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
+                                        {sale.paymentStatus === 'Unpaid' && sale.status === 'Completed' && (
+                                            <button
+                                                onClick={() => handlePayClick(sale)}
+                                                className="text-green-600 hover:text-green-900"
+                                            >
+                                                Pay
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => handlePrintClick(sale._id)}
                                             className="text-indigo-600 hover:text-indigo-900"
@@ -136,6 +182,17 @@ const SalesReportsPage = () => {
                 <InvoiceModal
                     sale={selectedSale}
                     onClose={() => setIsInvoiceModalOpen(false)}
+                />
+            )}
+
+            {isCheckoutModalOpen && (
+                <CheckoutModal
+                    totalAmount={saleToPay ? saleToPay.totalAmount : 0}
+                    onClose={() => {
+                        setIsCheckoutModalOpen(false);
+                        setSaleToPay(null);
+                    }}
+                    onConfirm={handleConfirmCheckout}
                 />
             )}
 

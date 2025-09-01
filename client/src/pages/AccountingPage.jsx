@@ -31,6 +31,7 @@ const AccountingPage = () => {
                 api.get('/sales')
             ]);
             setExpenses(expensesRes.data);
+            // We still get all completed sales, but will filter by payment status on the client
             setSales(salesRes.data.filter(sale => sale.status === 'Completed'));
         } catch (error) {
             console.error("Failed to fetch accounting data", error);
@@ -108,9 +109,11 @@ const AccountingPage = () => {
         return true;
     });
 
+    // --- CORRECTED CALCULATIONS ---
+    const paidSales = filteredSales.filter(sale => sale.paymentStatus === 'Paid');
 
-    const totalRevenue = filteredSales.reduce((acc, sale) => acc + sale.totalAmount, 0);
-    const totalCOGS = filteredSales.reduce((acc, sale) =>
+    const totalRevenue = paidSales.reduce((acc, sale) => acc + sale.totalAmount, 0);
+    const totalCOGS = paidSales.reduce((acc, sale) =>
         acc + sale.items.reduce((itemAcc, item) => itemAcc + ((item.basePrice || 0) * item.quantity), 0),
     0);
     const grossProfit = totalRevenue - totalCOGS;
@@ -138,7 +141,7 @@ const AccountingPage = () => {
             XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
 
             // Sales Sheet
-            const salesData = filteredSales.map(sale => ({
+            const salesData = paidSales.map(sale => ({
                 Date: new Date(sale.createdAt).toLocaleString('id-ID'),
                 Cashier: sale.cashierId.username,
                 Items: sale.items.map(i => `${i.quantity}x ${i.name}`).join(', '),
@@ -235,7 +238,7 @@ const AccountingPage = () => {
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredSales.map(sale => (
+                                {paidSales.map(sale => (
                                     <tr key={sale._id}>
                                         <td className="px-6 py-4 whitespace-nowrap">{new Date(sale.createdAt).toLocaleDateString()}</td>
                                         <td className="px-6 py-4 whitespace-nowrap">{sale.items.map(i => i.name).join(', ')}</td>
