@@ -10,7 +10,8 @@ const SaleSchema = new mongoose.Schema({
     name: { type: String, required: true },
     basePrice: { type: Number, required: true },
     price: { type: Number, required: true },
-    quantity: { type: Number, required: true }
+    quantity: { type: Number, required: true },
+    note: { type: String, trim: true } // <-- Baris ditambahkan
   }],
   totalAmount: { type: Number, required: true },
   paymentMethod: { type: String, enum: ['Cash', 'Card', 'Digital', 'Pending'], default: 'Pending' },

@@ -9,7 +9,7 @@ import CustomerModal from '../components/CustomerModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import EditSaleModal from '../components/EditSaleModal'; 
 
-// Component for viewing sale details (remains the same)
+// Component for viewing sale details
 const SaleDetailsModal = ({ sale, onClose }) => {
     if (!sale) return null;
     return (
@@ -23,9 +23,12 @@ const SaleDetailsModal = ({ sale, onClose }) => {
                 </div>
                 <ul className="divide-y max-h-60 overflow-y-auto">
                     {sale.items.map(item => (
-                        <li key={item._id || item.productId} className="flex justify-between py-2">
-                            <span>{item.quantity}x {item.name}</span>
-                            <span className="font-semibold">Rp{(item.price * item.quantity).toLocaleString('id-ID')}</span>
+                        <li key={item._id || item.productId} className="py-2">
+                            <div className="flex justify-between">
+                                <span>{item.quantity}x {item.name}</span>
+                                <span className="font-semibold">Rp{(item.price * item.quantity).toLocaleString('id-ID')}</span>
+                            </div>
+                            {item.note && <p className="text-xs text-gray-500 pl-4">- {item.note}</p>}
                         </li>
                     ))}
                 </ul>
@@ -62,6 +65,8 @@ const POSPage = () => {
     const [todaysRevenue, setTodaysRevenue] = useState(0);
     const [loadingSales, setLoadingSales] = useState(true);
     const [viewingSale, setViewingSale] = useState(null);
+    const [editingNoteFor, setEditingNoteFor] = useState(null);
+    const [currentNote, setCurrentNote] = useState('');
 
     const fetchTodaysSales = useCallback(async () => {
         setLoadingSales(true);
@@ -122,7 +127,7 @@ const POSPage = () => {
                     return currentCart;
                 }
             }
-            return [...currentCart, { ...product, quantity: 1 }];
+            return [...currentCart, { ...product, quantity: 1, note: '' }];
         });
     };
 
@@ -144,6 +149,20 @@ const POSPage = () => {
         });
     };
 
+    const handleNoteClick = (item) => {
+        setEditingNoteFor(item._id);
+        setCurrentNote(item.note || '');
+    };
+
+    const handleNoteChange = (productId, newNote) => {
+        setCart(cart.map(item => item._id === productId ? { ...item, note: newNote } : item));
+    };
+
+    const handleSaveNote = (productId) => {
+        handleNoteChange(productId, currentNote);
+        setEditingNoteFor(null);
+    };
+
     const handlePlaceOrder = () => {
         if (cart.length > 0) {
             setIsConfirmOrderOpen(true);
@@ -155,7 +174,7 @@ const POSPage = () => {
     const handlePayLater = async () => {
         setIsConfirmOrderOpen(false);
         const saleData = {
-            items: cart.map(({ _id, name, price, basePrice, quantity }) => ({ productId: _id, name, price, basePrice, quantity })),
+            items: cart.map(({ _id, name, price, basePrice, quantity, note }) => ({ productId: _id, name, price, basePrice, quantity, note })),
             totalAmount: totalAmount,
             paymentStatus: 'Unpaid',
             customerId: selectedCustomer ? selectedCustomer._id : null,
@@ -194,7 +213,7 @@ const POSPage = () => {
             }
         } else {
             const saleData = {
-                items: cart.map(({ _id, name, price, basePrice, quantity }) => ({ productId: _id, name, price, basePrice, quantity })),
+                items: cart.map(({ _id, name, price, basePrice, quantity, note }) => ({ productId: _id, name, price, basePrice, quantity, note })),
                 totalAmount: totalAmount,
                 paymentMethod,
                 paymentStatus: 'Paid',
@@ -326,16 +345,38 @@ const POSPage = () => {
                         ) : (
                             <ul className="divide-y">
                                 {cart.map(item => (
-                                    <li key={item._id} className="flex justify-between items-center py-3">
-                                        <div>
-                                            <p className="font-semibold text-sm">{item.name}</p>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <button onClick={() => updateQuantity(item._id, item.quantity - 1)} className="bg-gray-200 rounded-full w-6 h-6">-</button>
-                                                <span>{item.quantity}</span>
-                                                <button onClick={() => updateQuantity(item._id, item.quantity + 1)} className="bg-gray-200 rounded-full w-6 h-6">+</button>
+                                    <li key={item._id} className="py-3">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <p className="font-semibold text-sm">{item.name}</p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <button onClick={() => updateQuantity(item._id, item.quantity - 1)} className="bg-gray-200 rounded-full w-6 h-6">-</button>
+                                                    <span>{item.quantity}</span>
+                                                    <button onClick={() => updateQuantity(item._id, item.quantity + 1)} className="bg-gray-200 rounded-full w-6 h-6">+</button>
+                                                </div>
                                             </div>
+                                            <p className="font-bold text-sm">Rp{(item.quantity * item.price).toLocaleString('id-ID')}</p>
                                         </div>
-                                        <p className="font-bold text-sm">Rp{(item.quantity * item.price).toLocaleString('id-ID')}</p>
+                                        {editingNoteFor === item._id ? (
+                                            <div className="mt-2 flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={currentNote}
+                                                    onChange={(e) => setCurrentNote(e.target.value)}
+                                                    className="w-full text-xs p-1 border rounded"
+                                                    placeholder="Add a note..."
+                                                    autoFocus
+                                                />
+                                                <button onClick={() => handleSaveNote(item._id)} className="text-xs bg-green-500 text-white px-2 py-1 rounded">Save</button>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-1">
+                                                {item.note && <p className="text-xs text-gray-500 pl-1">- {item.note}</p>}
+                                                <button onClick={() => handleNoteClick(item)} className="text-xs text-sky-600 hover:underline">
+                                                    {item.note ? 'Edit Note' : 'Add Note'}
+                                                </button>
+                                            </div>
+                                        )}
                                     </li>
                                 ))}
                             </ul>

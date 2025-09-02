@@ -59,8 +59,12 @@ const EditSaleModal = ({ sale, products, onClose, onUpdate, onProcessPayment }) 
             if(currentItemInCart) {
                 return currentItems.map(item => item.productId === product._id ? {...item, quantity: item.quantity + 1} : item);
             }
-            return [...currentItems, { productId: product._id, name: product.name, price: product.price, basePrice: product.basePrice, quantity: 1}];
+            return [...currentItems, { productId: product._id, name: product.name, price: product.price, basePrice: product.basePrice, quantity: 1, note: ''}];
         });
+    };
+
+    const handleNoteChange = (productId, note) => {
+        setItems(items.map(item => item.productId === productId ? { ...item, note } : item));
     };
 
     const handleUpdate = () => {
@@ -86,19 +90,28 @@ const EditSaleModal = ({ sale, products, onClose, onUpdate, onProcessPayment }) 
                          <h3 className="text-lg font-semibold border-b pb-2 mb-2">Current Items</h3>
                          <div className="flex-grow overflow-y-auto pr-2">
                              {items.length > 0 ? items.map(item => (
-                                <div key={item.productId} className="flex justify-between items-center py-2 border-b">
-                                    <div className="flex-grow pr-2 min-w-0">
-                                        <p className="font-semibold break-words">{item.name}</p>
-                                        <p className="text-sm text-gray-500">Rp{item.price.toLocaleString('id-ID')}</p>
-                                    </div>
-                                    <div className="flex-shrink-0 flex flex-col items-end">
-                                        <p className="font-bold whitespace-nowrap">Rp{(item.quantity * item.price).toLocaleString('id-ID')}</p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <button onClick={() => handleQuantityChange(item.productId, item.quantity - 1)} className="bg-gray-200 rounded-full w-6 h-6">-</button>
-                                            <span>{item.quantity}</span>
-                                            <button onClick={() => handleQuantityChange(item.productId, item.quantity + 1)} className="bg-gray-200 rounded-full w-6 h-6">+</button>
+                                <div key={item.productId} className="py-2 border-b">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex-grow pr-2 min-w-0">
+                                            <p className="font-semibold break-words">{item.name}</p>
+                                            <p className="text-sm text-gray-500">Rp{item.price.toLocaleString('id-ID')}</p>
+                                        </div>
+                                        <div className="flex-shrink-0 flex flex-col items-end">
+                                            <p className="font-bold whitespace-nowrap">Rp{(item.quantity * item.price).toLocaleString('id-ID')}</p>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <button onClick={() => handleQuantityChange(item.productId, item.quantity - 1)} className="bg-gray-200 rounded-full w-6 h-6">-</button>
+                                                <span>{item.quantity}</span>
+                                                <button onClick={() => handleQuantityChange(item.productId, item.quantity + 1)} className="bg-gray-200 rounded-full w-6 h-6">+</button>
+                                            </div>
                                         </div>
                                     </div>
+                                    <input
+                                        type="text"
+                                        value={item.note || ''}
+                                        onChange={(e) => handleNoteChange(item.productId, e.target.value)}
+                                        className="w-full text-xs p-1 border rounded mt-2"
+                                        placeholder="Add a note..."
+                                    />
                                 </div>
                             )) : <p className="text-gray-500">No items in order.</p>}
                          </div>

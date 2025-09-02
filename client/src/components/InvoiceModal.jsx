@@ -105,7 +105,10 @@ const InvoiceModal = ({ sale, onClose }) => {
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {sale.items.map(item => (
                                     <tr key={item._id}>
-                                        <td className="px-4 py-3 whitespace-nowrap text-gray-800">{item.name}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-gray-800">
+                                            {item.name}
+                                            {item.note && <p className="text-xs text-gray-500 italic">- {item.note}</p>}
+                                        </td>
                                         <td className="px-4 py-3 whitespace-nowrap text-center text-gray-600">{item.quantity}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-right text-gray-600">Rp{item.price.toLocaleString('id-ID')}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-right font-medium text-gray-800">Rp{(item.price * item.quantity).toLocaleString('id-ID')}</td>
