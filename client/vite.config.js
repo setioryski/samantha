@@ -9,17 +9,17 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+        globPatterns: ['**/' + '*.{js,css,html,ico,png,svg}']
       },
       manifest: {
-        name: 'Apothecary PWA',
-        short_name: 'ApothecaryPWA',
-        description: 'Modern Point of Sale system for Apothecaries',
+        name: 'Warung Kopi Udin',
+        short_name: 'WarungKopiUdin',
+        description: 'Point of Sale application for Warung Kopi Udin',
         theme_color: '#0284c7',
         background_color: "#ffffff",
         display: "standalone",
         scope: "/",
-        start_url: "/",
+        start_url: "/", // <-- Corrected and explicitly set
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -36,6 +36,23 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable'
+          }
+        ],
+        // Add this section to fix the screenshot warnings
+        screenshots: [
+          {
+            src: '/screenshot-desktop.png',
+            sizes: '1280x720',
+            type: 'image/png',
+            form_factor: 'wide',
+            label: 'Desktop POS View'
+          },
+          {
+            src: '/screenshot-mobile.png',
+            sizes: '540x720',
+            type: 'image/png',
+            form_factor: 'narrow',
+            label: 'Mobile POS View'
           }
         ]
       }
