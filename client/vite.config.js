@@ -12,9 +12,9 @@ export default defineConfig({
         globPatterns: ['**/' + '*.{js,css,html,ico,png,svg}']
       },
       manifest: {
-        name: 'Warung Kopi Udin',
-        short_name: 'WarungKopiUdin',
-        description: 'Point of Sale application for Warung Kopi Udin',
+        name: '',
+        short_name: 'Samantha Hot Spa',
+        description: 'Samantha Hot Spa POS System',
         theme_color: '#0284c7',
         background_color: "#ffffff",
         display: "standalone",
