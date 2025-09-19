@@ -15,6 +15,8 @@ import CategoryPage from './pages/CategoryPage';
 import SettingsPage from './pages/SettingsPage';
 import CustomersPage from './pages/CustomersPage';
 import AllSellingProductsPage from './pages/AllSellingProductsPage';
+import VouchersPage from './pages/VouchersPage';
+import TherapistsPage from './pages/TherapistsPage'; // <-- Import this
 
 const App = () => {
     const { isAuthenticated, user } = useAuth();
@@ -64,6 +66,16 @@ const App = () => {
                 <Route path="/admin/categories" element={
                     <ProtectedRoute allowedRoles={['Admin']}>
                         <CategoryPage />
+                    </ProtectedRoute>
+                } />
+                <Route path="/admin/vouchers" element={
+                    <ProtectedRoute allowedRoles={['Admin']}>
+                        <VouchersPage />
+                    </ProtectedRoute>
+                } />
+                <Route path="/admin/therapists" element={ // <-- Add this route
+                    <ProtectedRoute allowedRoles={['Admin']}>
+                        <TherapistsPage />
                     </ProtectedRoute>
                 } />
                 <Route path="/admin/settings" element={

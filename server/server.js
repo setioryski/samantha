@@ -26,6 +26,8 @@ app.use('/api/categories', require('./routes/categoryRoutes'));
 app.use('/api/settings', require('./routes/settingsRoutes'));
 app.use('/api/adjustments', require('./routes/adjustmentRoutes'));
 app.use('/api/customers', require('./routes/customerRoutes'));
+app.use('/api/vouchers', require('./routes/voucherRoutes'));
+app.use('/api/therapists', require('./routes/therapistRoutes')); // <-- Add this line
 
 // --- Production Deployment Logic ---
 if (process.env.NODE_ENV === 'production') {

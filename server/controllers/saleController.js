@@ -1,5 +1,3 @@
-// setioryski/apptechary-app/apptechary-app-new3/server/controllers/saleController.js
-
 const mongoose = require('mongoose');
 const Sale = require('../models/Sale');
 const Product = require('../models/Product');
@@ -56,7 +54,7 @@ exports.getTopProducts = async (req, res) => {
 // @route   POST /api/sales
 // @access  Private
 exports.addSale = async (req, res) => {
-  const { items, totalAmount, paymentMethod, customerId, paymentStatus } = req.body;
+  const { items, subtotal, discount, voucherCode, totalAmount, paymentMethod, customerId, paymentStatus, therapistId, includeTherapistOnInvoice } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: 'No order items' });
@@ -95,6 +93,11 @@ exports.addSale = async (req, res) => {
       items: saleItems,
       cashierId: req.user._id,
       customerId,
+      therapistId,
+      includeTherapistOnInvoice,
+      subtotal,
+      discount,
+      voucherCode,
       totalAmount,
       paymentMethod: paymentStatus === 'Paid' ? paymentMethod : 'Pending',
       paymentStatus: paymentStatus || 'Unpaid',
@@ -114,7 +117,8 @@ exports.addSale = async (req, res) => {
 
     const populatedSale = await Sale.findById(createdSale._id)
         .populate('cashierId', 'username')
-        .populate('customerId', 'name phone');
+        .populate('customerId', 'name phone')
+        .populate('therapistId', 'name');
     res.status(201).json(populatedSale);
 
   } catch (error) {
@@ -261,7 +265,8 @@ exports.getSaleById = async (req, res) => {
         const sale = await Sale.findById(req.params.id)
             .populate('cashierId', 'username')
             .populate('items.productId', 'sku')
-            .populate('customerId', 'name phone address');
+            .populate('customerId', 'name phone address')
+            .populate('therapistId', 'name');
         if (sale) {
             res.json(sale);
         } else {

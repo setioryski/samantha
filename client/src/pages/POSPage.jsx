@@ -1,6 +1,4 @@
-// setioryski/apptechary-app/apptechary-app-new3/client/src/pages/POSPage.jsx
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../services/api';
 import CheckoutModal from '../components/CheckoutModal';
 import InvoiceModal from '../components/InvoiceModal';
@@ -8,8 +6,8 @@ import { useToast } from '../context/ToastContext';
 import CustomerModal from '../components/CustomerModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import EditSaleModal from '../components/EditSaleModal'; 
+import TherapistModal from '../components/TherapistModal';
 
-// Component for viewing sale details
 const SaleDetailsModal = ({ sale, onClose }) => {
     if (!sale) return null;
     return (
@@ -44,7 +42,6 @@ const SaleDetailsModal = ({ sale, onClose }) => {
     );
 };
 
-
 const POSPage = () => {
     const [cart, setCart] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
@@ -67,6 +64,12 @@ const POSPage = () => {
     const [viewingSale, setViewingSale] = useState(null);
     const [editingNoteFor, setEditingNoteFor] = useState(null);
     const [currentNote, setCurrentNote] = useState('');
+    const [vouchers, setVouchers] = useState([]);
+    const [selectedVoucher, setSelectedVoucher] = useState(null);
+    const [therapists, setTherapists] = useState([]);
+    const [selectedTherapist, setSelectedTherapist] = useState(null);
+    const [isTherapistModalOpen, setIsTherapistModalOpen] = useState(false);
+    const [includeTherapist, setIncludeTherapist] = useState(true);
 
     const fetchTodaysSales = useCallback(async () => {
         setLoadingSales(true);
@@ -85,12 +88,16 @@ const POSPage = () => {
     const fetchInitialData = useCallback(async () => {
         setLoading(true);
         try {
-            const [productsRes, customersRes] = await Promise.all([
+            const [productsRes, customersRes, vouchersRes, therapistsRes] = await Promise.all([
                 api.get('/products'),
-                api.get('/customers')
+                api.get('/customers'),
+                api.get('/vouchers/active'),
+                api.get('/therapists/active')
             ]);
             setProducts(productsRes.data);
             setCustomers(customersRes.data);
+            setVouchers(vouchersRes.data);
+            setTherapists(therapistsRes.data);
         } catch (error) {
             console.error("Failed to fetch initial data", error);
             showToast('Error fetching page data', 'error');
@@ -107,6 +114,9 @@ const POSPage = () => {
     const resetCart = () => {
         setCart([]);
         setSelectedCustomer(null);
+        setSelectedVoucher(null);
+        setSelectedTherapist(null);
+        setIncludeTherapist(true);
         setSearchTerm('');
     }
 
@@ -163,6 +173,20 @@ const POSPage = () => {
         setEditingNoteFor(null);
     };
 
+    const { subtotal, discount, totalAmount } = useMemo(() => {
+        const sub = cart.reduce((total, item) => total + item.price * item.quantity, 0);
+        let disc = 0;
+        if (selectedVoucher) {
+            if (selectedVoucher.type === 'percentage') {
+                disc = (sub * selectedVoucher.value) / 100;
+            } else {
+                disc = selectedVoucher.value;
+            }
+        }
+        const total = Math.max(0, sub - disc);
+        return { subtotal: sub, discount: disc, totalAmount: total };
+    }, [cart, selectedVoucher]);
+
     const handlePlaceOrder = () => {
         if (cart.length > 0) {
             setIsConfirmOrderOpen(true);
@@ -175,9 +199,14 @@ const POSPage = () => {
         setIsConfirmOrderOpen(false);
         const saleData = {
             items: cart.map(({ _id, name, price, basePrice, quantity, note }) => ({ productId: _id, name, price, basePrice, quantity, note })),
-            totalAmount: totalAmount,
+            subtotal,
+            discount,
+            voucherCode: selectedVoucher ? selectedVoucher.code : null,
+            totalAmount,
             paymentStatus: 'Unpaid',
             customerId: selectedCustomer ? selectedCustomer._id : null,
+            therapistId: selectedTherapist ? selectedTherapist._id : null,
+            includeTherapistOnInvoice: includeTherapist,
         };
         try {
             await api.post('/sales', saleData);
@@ -214,10 +243,15 @@ const POSPage = () => {
         } else {
             const saleData = {
                 items: cart.map(({ _id, name, price, basePrice, quantity, note }) => ({ productId: _id, name, price, basePrice, quantity, note })),
-                totalAmount: totalAmount,
+                subtotal,
+                discount,
+                voucherCode: selectedVoucher ? selectedVoucher.code : null,
+                totalAmount,
                 paymentMethod,
                 paymentStatus: 'Paid',
                 customerId: selectedCustomer ? selectedCustomer._id : null,
+                therapistId: selectedTherapist ? selectedTherapist._id : null,
+                includeTherapistOnInvoice: includeTherapist,
             };
             try {
                 const { data: populatedSale } = await api.post('/sales', saleData);
@@ -268,12 +302,23 @@ const POSPage = () => {
             showToast(error.response?.data?.message || 'Failed to add customer.', 'error');
         }
     };
-
-    const totalAmount = cart.reduce((total, item) => total + item.price * item.quantity, 0);
+    
+    const handleSaveTherapist = async (therapistData) => {
+        try {
+            const { data: newTherapist } = await api.post('/therapists', therapistData);
+            const updatedTherapists = [...therapists, newTherapist].sort((a,b) => a.name.localeCompare(b.name));
+            setTherapists(updatedTherapists);
+            setSelectedTherapist(newTherapist);
+            showToast('Therapist added successfully!', 'success');
+            setIsTherapistModalOpen(false);
+        } catch (error) {
+            showToast(error.response?.data?.message || 'Failed to add therapist.', 'error');
+        }
+    };
 
     const filteredProducts = products.filter(p =>
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+        (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     if (loading) return <div>Loading...</div>;
@@ -338,6 +383,38 @@ const POSPage = () => {
                             </div>
                         )}
                     </div>
+
+                    <div className="border-b pb-4 mb-4">
+                        <h2 className="text-xl font-bold mb-2">Therapist</h2>
+                        <div className="flex gap-2 items-center">
+                            <select
+                                value={selectedTherapist?._id || ''}
+                                onChange={(e) => {
+                                    const therapistId = e.target.value;
+                                    setSelectedTherapist(therapists.find(t => t._id === therapistId) || null);
+                                }}
+                                className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                            >
+                                <option value="">Select a therapist...</option>
+                                {therapists.map(t => (
+                                    <option key={t._id} value={t._id}>{t.name}</option>
+                                ))}
+                            </select>
+                            <button onClick={() => setIsTherapistModalOpen(true)} className="bg-blue-500 text-white p-2 rounded-lg text-sm">New</button>
+                        </div>
+                        <div className="mt-2">
+                            <label className="flex items-center text-sm text-gray-600">
+                                <input
+                                    type="checkbox"
+                                    checked={includeTherapist}
+                                    onChange={(e) => setIncludeTherapist(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                />
+                                <span className="ml-2">Include therapist on invoice</span>
+                            </label>
+                        </div>
+                    </div>
+
                     <h2 className="text-xl font-bold border-b pb-2 mb-4">Current Order</h2>
                     <div className="flex-grow overflow-y-auto">
                         {cart.length === 0 ? (
@@ -383,14 +460,48 @@ const POSPage = () => {
                         )}
                     </div>
                     <div className="border-t pt-4 mt-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <span className="text-lg font-bold">Total</span>
-                            <span className="text-2xl font-extrabold text-sky-700">Rp{totalAmount.toLocaleString('id-ID')}</span>
+                        <div className="mb-4">
+                             <label htmlFor="voucher" className="block text-sm font-medium text-gray-700 mb-1">Voucher/Discount</label>
+                             <select
+                                id="voucher"
+                                value={selectedVoucher?._id || ''}
+                                onChange={(e) => {
+                                    const voucherId = e.target.value;
+                                    setSelectedVoucher(vouchers.find(v => v._id === voucherId) || null);
+                                }}
+                                className="w-full p-2 border rounded-lg"
+                                disabled={cart.length === 0}
+                             >
+                                <option value="">No voucher</option>
+                                {vouchers.map(v => (
+                                    <option key={v._id} value={v._id}>
+                                        {v.code} - {v.description}
+                                    </option>
+                                ))}
+                             </select>
                         </div>
+
+                        <div className="space-y-2 text-sm">
+                             <div className="flex justify-between">
+                                <span>Subtotal</span>
+                                <span>Rp{subtotal.toLocaleString('id-ID')}</span>
+                             </div>
+                             {discount > 0 && (
+                                <div className="flex justify-between text-red-600">
+                                    <span>Discount ({selectedVoucher?.code})</span>
+                                    <span>- Rp{discount.toLocaleString('id-ID')}</span>
+                                </div>
+                             )}
+                             <div className="flex justify-between items-center text-lg font-bold border-t pt-2 mt-2">
+                                <span>Total</span>
+                                <span className="text-2xl text-sky-700">Rp{totalAmount.toLocaleString('id-ID')}</span>
+                            </div>
+                        </div>
+
                         <button
                             onClick={handlePlaceOrder}
                             disabled={cart.length === 0}
-                            className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            className="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed mt-4"
                         >
                             Place Order
                         </button>
@@ -487,6 +598,12 @@ const POSPage = () => {
                         setIsEditModalOpen(false);
                         handlePayForUnpaidOrder(sale);
                     }}
+                />
+            )}
+            {isTherapistModalOpen && (
+                <TherapistModal
+                    onClose={() => setIsTherapistModalOpen(false)}
+                    onSave={handleSaveTherapist}
                 />
             )}
         </>

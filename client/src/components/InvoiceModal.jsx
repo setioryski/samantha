@@ -80,6 +80,12 @@ const InvoiceModal = ({ sale, onClose }) => {
                             <p className="text-gray-500">Payment Method</p>
                             <p className="font-medium text-gray-800">{sale.paymentMethod}</p>
                         </div>
+                        {sale.includeTherapistOnInvoice && sale.therapistId && (
+                             <div>
+                                <p className="text-gray-500">Therapist</p>
+                                <p className="font-medium text-gray-800">{sale.therapistId.name}</p>
+                            </div>
+                        )}
                     </div>
                     
                     {sale.customerId && (
@@ -120,10 +126,20 @@ const InvoiceModal = ({ sale, onClose }) => {
 
                     {/* Footer */}
                     <div className="flex justify-end mt-6 pt-4 border-t">
-                        <div className="w-full max-w-xs">
-                            <div className="flex justify-between items-center">
-                                <span className="font-semibold text-gray-600">Total</span>
-                                <span className="text-xl font-bold text-gray-900">Rp{sale.totalAmount.toLocaleString('id-ID')}</span>
+                        <div className="w-full max-w-xs space-y-2">
+                             <div className="flex justify-between items-center">
+                                <span className="text-gray-600">Subtotal</span>
+                                <span className="text-gray-800">Rp{(sale.subtotal || sale.totalAmount + sale.discount).toLocaleString('id-ID')}</span>
+                            </div>
+                            {sale.discount > 0 && (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">Discount ({sale.voucherCode})</span>
+                                    <span className="text-red-600">- Rp{sale.discount.toLocaleString('id-ID')}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between items-center text-xl font-bold">
+                                <span className="text-gray-800">Total</span>
+                                <span className="text-gray-900">Rp{sale.totalAmount.toLocaleString('id-ID')}</span>
                             </div>
                         </div>
                     </div>
