@@ -71,6 +71,9 @@ const POSPage = () => {
     const [isTherapistModalOpen, setIsTherapistModalOpen] = useState(false);
     const [includeTherapist, setIncludeTherapist] = useState(true);
 
+    const [additionalFee, setAdditionalFee] = useState({ amount: 0, description: 'Biaya Tambahan', includeOnInvoice: true });
+    const [transportationFee, setTransportationFee] = useState({ amount: 0, includeOnInvoice: true });
+
     const fetchTodaysSales = useCallback(async () => {
         setLoadingSales(true);
         try {
@@ -118,6 +121,8 @@ const POSPage = () => {
         setSelectedTherapist(null);
         setIncludeTherapist(true);
         setSearchTerm('');
+        setAdditionalFee({ amount: 0, description: 'Biaya Tambahan', includeOnInvoice: true });
+        setTransportationFee({ amount: 0, includeOnInvoice: true });
     }
 
     const addToCart = (product) => {
@@ -183,9 +188,9 @@ const POSPage = () => {
                 disc = selectedVoucher.value;
             }
         }
-        const total = Math.max(0, sub - disc);
+        const total = Math.max(0, sub - disc) + (additionalFee.amount || 0) + (transportationFee.amount || 0);
         return { subtotal: sub, discount: disc, totalAmount: total };
-    }, [cart, selectedVoucher]);
+    }, [cart, selectedVoucher, additionalFee, transportationFee]);
 
     const handlePlaceOrder = () => {
         if (cart.length > 0) {
@@ -202,6 +207,8 @@ const POSPage = () => {
             subtotal,
             discount,
             voucherCode: selectedVoucher ? selectedVoucher.code : null,
+            additionalFee,
+            transportationFee,
             totalAmount,
             paymentStatus: 'Unpaid',
             customerId: selectedCustomer ? selectedCustomer._id : null,
@@ -246,6 +253,8 @@ const POSPage = () => {
                 subtotal,
                 discount,
                 voucherCode: selectedVoucher ? selectedVoucher.code : null,
+                additionalFee,
+                transportationFee,
                 totalAmount,
                 paymentMethod,
                 paymentStatus: 'Paid',
@@ -480,6 +489,56 @@ const POSPage = () => {
                                 ))}
                              </select>
                         </div>
+                        
+                         {/* Manual Fees Section */}
+                        <div className="space-y-3 text-sm mb-4">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Biaya Tambahan"
+                                    value={additionalFee.description}
+                                    onChange={(e) => setAdditionalFee(prev => ({ ...prev, description: e.target.value }))}
+                                    className="w-1/2 p-1 border rounded"
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="Amount"
+                                    value={additionalFee.amount || ''}
+                                    onChange={(e) => setAdditionalFee(prev => ({ ...prev, amount: Number(e.target.value) }))}
+                                    className="w-1/2 p-1 border rounded"
+                                />
+                            </div>
+                            <label className="flex items-center text-xs text-gray-600">
+                                <input
+                                    type="checkbox"
+                                    checked={additionalFee.includeOnInvoice}
+                                    onChange={(e) => setAdditionalFee(prev => ({ ...prev, includeOnInvoice: e.target.checked }))}
+                                    className="h-3 w-3 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                />
+                                <span className="ml-2">Show on invoice</span>
+                            </label>
+
+                            <div className="flex items-center gap-2">
+                                <span className="w-1/2 p-1">Transportation</span>
+                                <input
+                                    type="number"
+                                    placeholder="Amount"
+                                    value={transportationFee.amount || ''}
+                                    onChange={(e) => setTransportationFee(prev => ({...prev, amount: Number(e.target.value)}))}
+                                    className="w-1/2 p-1 border rounded"
+                                />
+                            </div>
+                            <label className="flex items-center text-xs text-gray-600">
+                                <input
+                                    type="checkbox"
+                                    checked={transportationFee.includeOnInvoice}
+                                    onChange={(e) => setTransportationFee(prev => ({ ...prev, includeOnInvoice: e.target.checked }))}
+                                    className="h-3 w-3 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                />
+                                <span className="ml-2">Show on invoice</span>
+                            </label>
+                        </div>
+
 
                         <div className="space-y-2 text-sm">
                              <div className="flex justify-between">
@@ -490,6 +549,18 @@ const POSPage = () => {
                                 <div className="flex justify-between text-red-600">
                                     <span>Discount ({selectedVoucher?.code})</span>
                                     <span>- Rp{discount.toLocaleString('id-ID')}</span>
+                                </div>
+                             )}
+                              {additionalFee.amount > 0 && (
+                                <div className="flex justify-between text-blue-600">
+                                    <span>{additionalFee.description}</span>
+                                    <span>+ Rp{additionalFee.amount.toLocaleString('id-ID')}</span>
+                                </div>
+                             )}
+                             {transportationFee.amount > 0 && (
+                                <div className="flex justify-between text-blue-600">
+                                    <span>Transportation</span>
+                                    <span>+ Rp{transportationFee.amount.toLocaleString('id-ID')}</span>
                                 </div>
                              )}
                              <div className="flex justify-between items-center text-lg font-bold border-t pt-2 mt-2">

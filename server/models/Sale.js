@@ -11,11 +11,21 @@ const SaleSchema = new mongoose.Schema({
     basePrice: { type: Number, required: true },
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },
-    note: { type: String, trim: true }
+    note: { type: String, trim: true },
+    therapistFee: { type: Number, default: 0 }
   }],
   subtotal: { type: Number, required: true },
   discount: { type: Number, default: 0 },
   voucherCode: { type: String, trim: true },
+  additionalFee: {
+    amount: { type: Number, default: 0 },
+    description: { type: String, trim: true, default: 'Biaya Tambahan' },
+    includeOnInvoice: { type: Boolean, default: true }
+  },
+  transportationFee: {
+    amount: { type: Number, default: 0 },
+    includeOnInvoice: { type: Boolean, default: true }
+  },
   totalAmount: { type: Number, required: true },
   paymentMethod: { type: String, enum: ['Cash', 'Card', 'Digital', 'Pending'], default: 'Pending' },
   paymentStatus: { type: String, required: true, enum: ['Paid', 'Unpaid'], default: 'Unpaid' },

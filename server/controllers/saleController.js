@@ -2,6 +2,9 @@ const mongoose = require('mongoose');
 const Sale = require('../models/Sale');
 const Product = require('../models/Product');
 const Customer = require('../models/Customer');
+const Therapist = require('../models/Therapist');
+const Expense = require('../models/Expense');
+
 
 // @desc    Get all selling products
 // @route   GET /api/sales/allselling
@@ -54,7 +57,11 @@ exports.getTopProducts = async (req, res) => {
 // @route   POST /api/sales
 // @access  Private
 exports.addSale = async (req, res) => {
-  const { items, subtotal, discount, voucherCode, totalAmount, paymentMethod, customerId, paymentStatus, therapistId, includeTherapistOnInvoice } = req.body;
+  const { 
+    items, subtotal, discount, voucherCode, totalAmount, paymentMethod, 
+    customerId, paymentStatus, therapistId, includeTherapistOnInvoice,
+    additionalFee, transportationFee 
+  } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: 'No order items' });
@@ -66,6 +73,13 @@ exports.addSale = async (req, res) => {
   try {
     const productIds = items.map(item => item.productId);
     const products = await Product.find({ '_id': { $in: productIds } }).session(session);
+    let therapist = null;
+    if (therapistId) {
+        therapist = await Therapist.findById(therapistId).session(session);
+        if (!therapist) {
+            throw new Error(`Therapist with id ${therapistId} not found.`);
+        }
+    }
 
     if (customerId) {
         const customer = await Customer.findById(customerId).session(session);
@@ -82,9 +96,16 @@ exports.addSale = async (req, res) => {
         if (product.stock < item.quantity) {
             throw new Error(`Not enough stock for ${item.name}. Available: ${product.stock}, Requested: ${item.quantity}`);
         }
+        
+        let therapistFee = 0;
+        if (therapist && therapist.feePercentage > 0) {
+            therapistFee = (item.price * item.quantity) * (therapist.feePercentage / 100);
+        }
+
         return {
             ...item,
-            basePrice: product.basePrice
+            basePrice: product.basePrice,
+            therapistFee
         };
     });
 
@@ -98,6 +119,8 @@ exports.addSale = async (req, res) => {
       subtotal,
       discount,
       voucherCode,
+      additionalFee,
+      transportationFee,
       totalAmount,
       paymentMethod: paymentStatus === 'Paid' ? paymentMethod : 'Pending',
       paymentStatus: paymentStatus || 'Unpaid',
@@ -112,6 +135,30 @@ exports.addSale = async (req, res) => {
         $inc: { stock: -item.quantity }
       }, { session });
     }
+    
+    // If the sale is paid, handle therapist and transportation fees as expenses
+    if (paymentStatus === 'Paid') {
+        const totalTherapistFee = saleItems.reduce((acc, item) => acc + item.therapistFee, 0);
+        if (therapist && totalTherapistFee > 0) {
+            const expense = new Expense({
+                description: `Therapist fee for ${therapist.name} on Sale ID: ${createdSale._id}`,
+                amount: totalTherapistFee,
+                category: 'Therapist Fee',
+                createdBy: req.user._id,
+            });
+            await expense.save({ session });
+        }
+        if (transportationFee && transportationFee.amount > 0) {
+            const transportExpense = new Expense({
+                description: `Transportation fee for Sale ID: ${createdSale._id}`,
+                amount: transportationFee.amount,
+                category: 'Transportation',
+                createdBy: req.user._id,
+            });
+            await transportExpense.save({ session });
+        }
+    }
+
 
     await session.commitTransaction();
 
@@ -187,7 +234,7 @@ exports.updateSale = async (req, res) => {
 // @access  Private
 exports.updateSaleToPaid = async (req, res) => {
     const { paymentMethod } = req.body;
-    const sale = await Sale.findById(req.params.id);
+    const sale = await Sale.findById(req.params.id).populate('therapistId');
 
     if (!sale) {
         return res.status(404).json({ message: 'Sale not found' });
@@ -196,18 +243,57 @@ exports.updateSaleToPaid = async (req, res) => {
         return res.status(400).json({ message: 'Sale has already been paid' });
     }
     
-    sale.paymentStatus = 'Paid';
-    sale.paymentMethod = paymentMethod;
-    const updatedSale = await sale.save();
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    
+    try {
+        sale.paymentStatus = 'Paid';
+        sale.paymentMethod = paymentMethod;
 
-    res.json(updatedSale);
+        // If there's a therapist, create an expense for their fee
+        if (sale.therapistId) {
+            const totalTherapistFee = sale.items.reduce((acc, item) => acc + item.therapistFee, 0);
+            if (totalTherapistFee > 0) {
+                const expense = new Expense({
+                    description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`,
+                    amount: totalTherapistFee,
+                    category: 'Therapist Fee',
+                    createdBy: req.user._id, 
+                });
+                await expense.save({ session });
+            }
+        }
+        
+        // Create an expense for the transportation fee
+        if (sale.transportationFee && sale.transportationFee.amount > 0) {
+            const transportExpense = new Expense({
+                description: `Transportation fee for Sale ID: ${sale._id}`,
+                amount: sale.transportationFee.amount,
+                category: 'Transportation',
+                createdBy: req.user._id,
+            });
+            await transportExpense.save({ session });
+        }
+
+
+        const updatedSale = await sale.save({ session });
+        await session.commitTransaction();
+        res.json(updatedSale);
+    } catch (error) {
+        await session.abortTransaction();
+        console.error(`Sale payment update error: ${error.message}`);
+        res.status(500).json({ message: `Server Error: ${error.message}` });
+    } finally {
+        session.endSession();
+    }
 };
+
 
 // @desc    Retract a sale
 // @route   PUT /api/sales/:id/retract
 // @access  Private/Admin
 exports.retractSale = async (req, res) => {
-    const sale = await Sale.findById(req.params.id);
+    const sale = await Sale.findById(req.params.id).populate('therapistId');
 
     if (!sale) {
         return res.status(404).json({ message: 'Sale not found' });
@@ -226,6 +312,23 @@ exports.retractSale = async (req, res) => {
                 $inc: { stock: +item.quantity }
             }, { session });
         }
+        
+        // If the sale was paid, retract any associated expenses
+        if (sale.paymentStatus === 'Paid') {
+            // Retract therapist fee
+            if (sale.therapistId) {
+                await Expense.deleteOne({
+                    description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`
+                }, { session });
+            }
+            // Retract transportation fee
+            if (sale.transportationFee && sale.transportationFee.amount > 0) {
+                 await Expense.deleteOne({
+                    description: `Transportation fee for Sale ID: ${sale._id}`
+                }, { session });
+            }
+        }
+
 
         sale.status = 'Retracted';
         const updatedSale = await sale.save({ session });

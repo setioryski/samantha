@@ -125,6 +125,7 @@ const TherapistsPage = () => {
                         <thead className="bg-gray-50">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fee Percentage</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
@@ -133,6 +134,7 @@ const TherapistsPage = () => {
                             {therapists.map(therapist => (
                                 <tr key={therapist._id}>
                                     <td className="px-6 py-4 whitespace-nowrap">{therapist.name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{therapist.feePercentage}%</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-center">
                                         <button onClick={() => handleToggleActive(therapist)} className={`px-2 py-1 text-xs rounded-full ${therapist.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                             {therapist.isActive ? 'Active' : 'Inactive'}
@@ -187,21 +189,23 @@ const TherapistsPage = () => {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Therapist Name</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Transactions</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Earnings</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {loadingReport ? (
-                                    <tr><td colSpan="3" className="text-center py-4">Loading report...</td></tr>
+                                    <tr><td colSpan="4" className="text-center py-4">Loading report...</td></tr>
                                 ) : reportData.length > 0 ? (
                                     reportData.map((therapist, index) => (
                                         <tr key={therapist.therapistId}>
                                             <td className="px-6 py-4 whitespace-nowrap">{index + 1}</td>
                                             <td className="px-6 py-4 whitespace-nowrap">{therapist.name}</td>
                                             <td className="px-6 py-4 whitespace-nowrap">{therapist.transactionCount}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap">Rp{therapist.totalEarnings.toLocaleString('id-ID')}</td>
                                         </tr>
                                     ))
                                 ) : (
-                                    <tr><td colSpan="3" className="text-center py-4 text-gray-500">No data for the selected period.</td></tr>
+                                    <tr><td colSpan="4" className="text-center py-4 text-gray-500">No data for the selected period.</td></tr>
                                 )}
                             </tbody>
                         </table>

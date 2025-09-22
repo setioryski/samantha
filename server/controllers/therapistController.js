@@ -10,7 +10,8 @@ exports.getTherapistReport = async (req, res) => {
 
         const matchStage = {
             therapistId: { $ne: null },
-            status: 'Completed'
+            status: 'Completed',
+            paymentStatus: 'Paid' // Only count paid sales for earnings
         };
 
         if (startDate && endDate) {
@@ -22,11 +23,13 @@ exports.getTherapistReport = async (req, res) => {
 
         const report = await Sale.aggregate([
             { $match: matchStage },
+            { $unwind: '$items' },
             { $group: {
                 _id: '$therapistId',
-                count: { $sum: 1 }
+                transactionCount: { $sum: 1 },
+                totalEarnings: { $sum: '$items.therapistFee' }
             }},
-            { $sort: { count: -1 } },
+            { $sort: { totalEarnings: -1 } },
             { $limit: 10 },
             { $lookup: {
                 from: 'therapists',
@@ -39,7 +42,8 @@ exports.getTherapistReport = async (req, res) => {
                 _id: 0,
                 therapistId: '$_id',
                 name: '$therapist.name',
-                transactionCount: '$count'
+                transactionCount: '$transactionCount',
+                totalEarnings: '$totalEarnings'
             }}
         ]);
 
@@ -78,13 +82,13 @@ exports.getActiveTherapists = async (req, res) => {
 // @route   POST /api/therapists
 // @access  Private
 exports.createTherapist = async (req, res) => {
-    const { name } = req.body;
+    const { name, feePercentage } = req.body;
     try {
         const therapistExists = await Therapist.findOne({ name });
         if (therapistExists) {
             return res.status(400).json({ message: 'A therapist with this name already exists' });
         }
-        const therapist = await Therapist.create({ name });
+        const therapist = await Therapist.create({ name, feePercentage });
         res.status(201).json(therapist);
     } catch (error) {
         res.status(500).json({ message: `Server Error: ${error.message}` });
@@ -95,12 +99,13 @@ exports.createTherapist = async (req, res) => {
 // @route   PUT /api/therapists/:id
 // @access  Private/Admin
 exports.updateTherapist = async (req, res) => {
-    const { name, isActive } = req.body;
+    const { name, isActive, feePercentage } = req.body;
     try {
         const therapist = await Therapist.findById(req.params.id);
         if (therapist) {
             therapist.name = name || therapist.name;
             therapist.isActive = isActive !== undefined ? isActive : therapist.isActive;
+            therapist.feePercentage = feePercentage !== undefined ? feePercentage : therapist.feePercentage;
             const updatedTherapist = await therapist.save();
             res.json(updatedTherapist);
         } else {

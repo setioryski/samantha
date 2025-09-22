@@ -7,6 +7,13 @@ const TherapistSchema = new mongoose.Schema({
     trim: true,
     unique: true,
   },
+  feePercentage: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100,
+    default: 0,
+  },
   isActive: {
     type: Boolean,
     default: true,

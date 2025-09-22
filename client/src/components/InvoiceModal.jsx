@@ -45,7 +45,6 @@ const InvoiceModal = ({ sale, onClose }) => {
         `;
 
         window.print();
-
         document.body.innerHTML = originalContents;
         window.location.reload();
     };
@@ -135,6 +134,18 @@ const InvoiceModal = ({ sale, onClose }) => {
                                 <div className="flex justify-between items-center">
                                     <span className="text-gray-600">Discount ({sale.voucherCode})</span>
                                     <span className="text-red-600">- Rp{sale.discount.toLocaleString('id-ID')}</span>
+                                </div>
+                            )}
+                            {sale.additionalFee && sale.additionalFee.amount > 0 && sale.additionalFee.includeOnInvoice && (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">{sale.additionalFee.description}</span>
+                                    <span className="text-gray-800">+ Rp{sale.additionalFee.amount.toLocaleString('id-ID')}</span>
+                                </div>
+                            )}
+                            {sale.transportationFee && sale.transportationFee.amount > 0 && sale.transportationFee.includeOnInvoice && (
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-600">Transportation</span>
+                                    <span className="text-gray-800">+ Rp{sale.transportationFee.amount.toLocaleString('id-ID')}</span>
                                 </div>
                             )}
                             <div className="flex justify-between items-center text-xl font-bold">
