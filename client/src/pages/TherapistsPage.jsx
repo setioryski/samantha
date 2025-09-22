@@ -16,8 +16,32 @@ const TherapistsPage = () => {
     // State for the report
     const [reportData, setReportData] = useState([]);
     const [loadingReport, setLoadingReport] = useState(false);
-    const [startDate, setStartDate] = useState('');
-    const [endDate, setEndDate] = useState('');
+    
+    // Helper function to format a date to YYYY-MM-DD string
+    const formatDate = (date) => {
+        const d = new Date(date);
+        const year = d.getFullYear();
+        // getMonth is 0-indexed, so we add 1
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    // Set default dates to the start and end of the current month
+    const getInitialDates = () => {
+        const today = new Date();
+        const y = today.getFullYear();
+        const m = today.getMonth();
+        const firstDay = new Date(y, m, 1);
+        const lastDay = new Date(y, m + 1, 0);
+        return { 
+            firstDay: formatDate(firstDay), 
+            lastDay: formatDate(lastDay) 
+        };
+    };
+
+    const [startDate, setStartDate] = useState(getInitialDates().firstDay);
+    const [endDate, setEndDate] = useState(getInitialDates().lastDay);
 
     const fetchTherapists = useCallback(async () => {
         setLoading(true);
@@ -31,11 +55,7 @@ const TherapistsPage = () => {
         }
     }, [showToast]);
 
-    useEffect(() => {
-        fetchTherapists();
-    }, [fetchTherapists]);
-
-    const handleGenerateReport = async () => {
+    const handleGenerateReport = useCallback(async () => {
         if (!startDate || !endDate) {
             showToast('Please select both a start and end date.', 'error');
             return;
@@ -49,8 +69,15 @@ const TherapistsPage = () => {
         } finally {
             setLoadingReport(false);
         }
-    };
+    }, [startDate, endDate, showToast]);
 
+    useEffect(() => {
+        fetchTherapists();
+        handleGenerateReport();
+        // We disable the lint warning because we intentionally want this to run
+        // only once on mount with the initial dates from the state.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleOpenModal = (therapist = null) => {
         setSelectedTherapist(therapist);

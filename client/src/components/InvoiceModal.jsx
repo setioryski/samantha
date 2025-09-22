@@ -29,8 +29,8 @@ const InvoiceModal = ({ sale, onClose }) => {
 
     return (
         <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50 print:bg-white">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col print:shadow-none print:border-none">
-                <div id="invoice-print-area" className="p-8 md:p-12">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col print:shadow-none print:border-none max-h-[95vh]">
+                <div id="invoice-print-area" className="p-8 md:p-12 overflow-y-auto">
                     {/* Header */}
                     <header className="flex justify-between items-start pb-6 border-b">
                         <div className="flex flex-col">
