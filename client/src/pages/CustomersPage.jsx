@@ -7,6 +7,7 @@ import ConfirmationModal from '../components/ConfirmationModal';
 const CustomersPage = () => {
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
     const { showToast } = useToast();
     
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -75,6 +76,11 @@ const CustomersPage = () => {
         }
     };
 
+    const filteredCustomers = customers.filter(customer =>
+        customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (customer.phone && customer.phone.includes(searchTerm))
+    );
+
     if (loading) return <div>Loading customers...</div>;
 
     return (
@@ -85,6 +91,16 @@ const CustomersPage = () => {
                     Add Customer
                 </button>
             </div>
+
+            <div className="mb-4">
+                <input
+                    type="text"
+                    placeholder="Search by name or phone..."
+                    className="w-full p-2 border rounded-md"
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+
             <div className="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                     {/* Table Head */}
@@ -98,7 +114,7 @@ const CustomersPage = () => {
                     </thead>
                     {/* Table Body */}
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {customers.map(customer => (
+                        {filteredCustomers.map(customer => (
                             <tr key={customer._id}>
                                 <td className="px-6 py-4 whitespace-nowrap">{customer.name}</td>
                                 <td className="px-6 py-4 whitespace-nowrap">{customer.phone}</td>

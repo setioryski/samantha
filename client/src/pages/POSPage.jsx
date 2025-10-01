@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import CheckoutModal from '../components/CheckoutModal';
 import InvoiceModal from '../components/InvoiceModal';
 import { useToast } from '../context/ToastContext';
 import CustomerModal from '../components/CustomerModal';
 import ConfirmationModal from '../components/ConfirmationModal';
-import EditSaleModal from '../components/EditSaleModal'; 
+import EditSaleModal from '../components/EditSaleModal';
 import TherapistModal from '../components/TherapistModal';
 import { useAuth } from '../context/AuthContext';
 
@@ -373,7 +374,12 @@ const POSPage = () => {
 
                 <div className="lg:w-1/3 bg-white p-4 rounded-lg shadow-sm flex flex-col">
                     <div className="border-b pb-4 mb-4">
-                        <h2 className="text-xl font-bold mb-2">Customer</h2>
+                        <div className="flex justify-between items-center mb-2">
+                             <h2 className="text-xl font-bold">Customer</h2>
+                             <Link to="/admin/customers" className="text-sm text-sky-600 hover:underline">
+                                Manage Customers
+                            </Link>
+                        </div>
                         {selectedCustomer ? (
                             <div className="flex justify-between items-center bg-sky-100 p-2 rounded-lg">
                                 <div>

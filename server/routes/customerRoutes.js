@@ -14,7 +14,7 @@ router.route('/')
     .post(protect, createCustomer);
 
 router.route('/:id')
-    .put(protect, isAdmin, updateCustomer)
+    .put(protect, updateCustomer)
     .delete(protect, isAdmin, deleteCustomer);
 
 module.exports = router;

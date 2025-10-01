@@ -46,7 +46,10 @@ const Layout = () => {
                   </>
                 )}
                 {user?.role === 'Cashier' && (
-                  <NavLink to="/pos" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>POS</NavLink>
+                  <>
+                    <NavLink to="/pos" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>POS</NavLink>
+                    <NavLink to="/admin/customers" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Customers</NavLink>
+                  </>
                 )}
               </div>
             </div>
