@@ -12,6 +12,7 @@ const {
   getTodaysSales,
   updateSaleToPaid,
   updateSale, 
+  deleteSale,
 } = require('../controllers/saleController');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 
@@ -25,7 +26,8 @@ router.get('/today', protect, getTodaysSales);
 
 router.route('/:id')
     .get(protect, getSaleById)
-    .put(protect, updateSale); 
+    .put(protect, updateSale)
+    .delete(protect, isAdmin, deleteSale); 
 
 router.route('/:id/retract').put(protect, isAdmin, retractSale);
 router.route('/:id/pay').put(protect, updateSaleToPaid);

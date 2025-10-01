@@ -14,6 +14,7 @@ const SalesReportsPage = () => {
     const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
     const [saleToRetractId, setSaleToRetractId] = useState(null);
     const [saleToPay, setSaleToPay] = useState(null);
+    const [saleToDeleteId, setSaleToDeleteId] = useState(null);
     const { showToast } = useToast();
 
     const fetchSales = useCallback(async () => {
@@ -50,6 +51,11 @@ const SalesReportsPage = () => {
         setIsConfirmModalOpen(true);
     };
 
+    const handleDeleteClick = (saleId) => {
+        setSaleToDeleteId(saleId);
+        setIsConfirmModalOpen(true);
+    };
+
     const handlePayClick = (sale) => {
         setSaleToPay(sale);
         setIsCheckoutModalOpen(true);
@@ -68,6 +74,21 @@ const SalesReportsPage = () => {
         } finally {
             setIsConfirmModalOpen(false);
             setSaleToRetractId(null);
+        }
+    };
+
+    const confirmDeletion = async () => {
+        if (!saleToDeleteId) return;
+        try {
+            await api.delete(`/sales/${saleToDeleteId}`);
+            showToast('Sale deleted successfully!', 'success');
+            fetchSales(); // Refresh the sales list
+        } catch (error) {
+            console.error("Failed to delete sale", error);
+            showToast(error.response?.data?.message || 'Failed to delete sale.', 'error');
+        } finally {
+            setIsConfirmModalOpen(false);
+            setSaleToDeleteId(null);
         }
     };
 
@@ -163,13 +184,21 @@ const SalesReportsPage = () => {
                                         >
                                             Invoice
                                         </button>
+                                        {sale.status !== 'Retracted' ? (
                                         <button
                                             onClick={() => handleRetractClick(sale._id)}
-                                            disabled={sale.status === 'Retracted'}
-                                            className="text-red-600 hover:text-red-900 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                            className="text-red-600 hover:text-red-900"
                                         >
                                             Retract
                                         </button>
+                                        ) : (
+                                        <button
+                                            onClick={() => handleDeleteClick(sale._id)}
+                                            className="text-red-600 hover:text-red-900"
+                                        >
+                                            Delete
+                                        </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -197,7 +226,7 @@ const SalesReportsPage = () => {
             )}
 
             <ConfirmationModal
-                isOpen={isConfirmModalOpen}
+                isOpen={isConfirmModalOpen && !!saleToRetractId}
                 onClose={() => {
                     setIsConfirmModalOpen(false);
                     setSaleToRetractId(null);
@@ -205,6 +234,17 @@ const SalesReportsPage = () => {
                 onConfirm={confirmRetraction}
                 title="Confirm Sale Retraction"
                 message="Are you sure you want to retract this sale? This action cannot be undone and will restore the items to inventory."
+            />
+
+            <ConfirmationModal
+                isOpen={isConfirmModalOpen && !!saleToDeleteId}
+                onClose={() => {
+                    setIsConfirmModalOpen(false);
+                    setSaleToDeleteId(null);
+                }}
+                onConfirm={confirmDeletion}
+                title="Confirm Sale Deletion"
+                message="Are you sure you want to permanently delete this sale? This action cannot be undone."
             />
         </>
     );

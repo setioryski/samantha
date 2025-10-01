@@ -346,6 +346,29 @@ exports.retractSale = async (req, res) => {
     }
 };
 
+// @desc    Delete a sale
+// @route   DELETE /api/sales/:id
+// @access  Private/Admin
+exports.deleteSale = async (req, res) => {
+    const sale = await Sale.findById(req.params.id);
+
+    if (!sale) {
+        return res.status(404).json({ message: 'Sale not found' });
+    }
+
+    // Optional: Only allow deletion of retracted sales
+    if (sale.status !== 'Retracted') {
+        return res.status(400).json({ message: 'Only retracted sales can be deleted.' });
+    }
+
+    try {
+        await sale.deleteOne();
+        res.json({ message: 'Sale removed' });
+    } catch (error) {
+        res.status(500).json({ message: `Server Error: ${error.message}` });
+    }
+};
+
 // @desc    Get all sales
 // @route   GET /api/sales
 // @access  Private/Admin

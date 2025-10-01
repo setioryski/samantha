@@ -7,6 +7,7 @@ import CustomerModal from '../components/CustomerModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import EditSaleModal from '../components/EditSaleModal'; 
 import TherapistModal from '../components/TherapistModal';
+import { useAuth } from '../context/AuthContext';
 
 const SaleDetailsModal = ({ sale, onClose }) => {
     if (!sale) return null;
@@ -43,8 +44,10 @@ const SaleDetailsModal = ({ sale, onClose }) => {
 };
 
 const POSPage = () => {
+    const { user } = useAuth();
     const [cart, setCart] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const [customerSearch, setCustomerSearch] = useState('');
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -121,6 +124,7 @@ const POSPage = () => {
         setSelectedTherapist(null);
         setIncludeTherapist(true);
         setSearchTerm('');
+        setCustomerSearch('');
         setAdditionalFee({ amount: 0, description: 'Biaya Tambahan', includeOnInvoice: true });
         setTransportationFee({ amount: 0, includeOnInvoice: true });
     }
@@ -193,11 +197,15 @@ const POSPage = () => {
     }, [cart, selectedVoucher, additionalFee, transportationFee]);
 
     const handlePlaceOrder = () => {
-        if (cart.length > 0) {
-            setIsConfirmOrderOpen(true);
-        } else {
+        if (cart.length === 0) {
             showToast('Cart is empty', 'error');
+            return;
         }
+        if (!selectedTherapist) {
+            showToast('Please select a therapist.', 'error');
+            return;
+        }
+        setIsConfirmOrderOpen(true);
     };
     
     const handlePayLater = async () => {
@@ -329,6 +337,11 @@ const POSPage = () => {
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))
     );
+    
+    const filteredCustomers = customers.filter(c =>
+        c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+        (c.phone && c.phone.includes(customerSearch))
+    );
 
     if (loading) return <div>Loading...</div>;
 
@@ -371,24 +384,32 @@ const POSPage = () => {
                             </div>
                         ) : (
                             <div>
-                                <div className="flex gap-2">
-                                    <select
-                                        value={selectedCustomer?._id || ''}
-                                        onChange={(e) => {
-                                            const custId = e.target.value;
-                                            setSelectedCustomer(customers.find(c => c._id === custId) || null);
-                                        }}
+                                <div className="flex gap-2 mb-2">
+                                     <input
+                                        type="text"
+                                        placeholder="Search customer by name/phone..."
                                         className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                    >
-                                        <option value="">Select a customer...</option>
-                                        {customers.map(cust => (
-                                            <option key={cust._id} value={cust._id}>
-                                                {cust.name} {cust.phone && `(${cust.phone})`}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        value={customerSearch}
+                                        onChange={(e) => setCustomerSearch(e.target.value)}
+                                    />
                                     <button onClick={() => setIsCustomerModalOpen(true)} className="bg-blue-500 text-white p-2 rounded-lg text-sm">New</button>
                                 </div>
+                                {customerSearch && (
+                                <div className="max-h-32 overflow-y-auto border rounded-lg">
+                                    {filteredCustomers.map(cust => (
+                                    <div
+                                        key={cust._id}
+                                        onClick={() => {
+                                        setSelectedCustomer(cust);
+                                        setCustomerSearch('');
+                                        }}
+                                        className="p-2 cursor-pointer hover:bg-gray-100"
+                                    >
+                                        {cust.name} ({cust.phone})
+                                    </div>
+                                    ))}
+                                </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -409,7 +430,9 @@ const POSPage = () => {
                                     <option key={t._id} value={t._id}>{t.name}</option>
                                 ))}
                             </select>
+                            {user.role === 'Admin' && (
                             <button onClick={() => setIsTherapistModalOpen(true)} className="bg-blue-500 text-white p-2 rounded-lg text-sm">New</button>
+                            )}
                         </div>
                         <div className="mt-2">
                             <label className="flex items-center text-sm text-gray-600">

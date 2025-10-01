@@ -8,10 +8,10 @@ const {
 } = require('../controllers/customerController');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
 
-// Admins can do anything, Cashiers can only view
+// Admins can do anything, Cashiers can only view and create
 router.route('/')
     .get(protect, getCustomers)
-    .post(protect, isAdmin, createCustomer);
+    .post(protect, createCustomer);
 
 router.route('/:id')
     .put(protect, isAdmin, updateCustomer)
