@@ -16,6 +16,20 @@ const SalesReportsPage = () => {
     const [saleToPay, setSaleToPay] = useState(null);
     const [saleToDeleteId, setSaleToDeleteId] = useState(null);
     const { showToast } = useToast();
+    
+    const getToday = () => {
+        const today = new Date();
+        return today.toISOString().split('T')[0];
+    }
+
+    const getTomorrow = () => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return tomorrow.toISOString().split('T')[0];
+    }
+
+    const [startDate, setStartDate] = useState(getToday());
+    const [endDate, setEndDate] = useState(getTomorrow());
 
     const fetchSales = useCallback(async () => {
         setLoading(true);
@@ -131,12 +145,71 @@ const SalesReportsPage = () => {
         }
     };
 
+    const filteredSales = sales.filter(sale => {
+        const saleDate = new Date(sale.createdAt);
+        const start = startDate ? new Date(startDate) : null;
+        const end = endDate ? new Date(endDate) : null;
+
+        if(start) start.setHours(0, 0, 0, 0);
+        if(end) end.setHours(23, 59, 59, 999);
+
+        if (start && saleDate < start) return false;
+        if (end && saleDate > end) return false;
+
+        return true;
+    });
+
+    const totalCash = filteredSales.reduce((acc, sale) => {
+        if (sale.paymentMethod === 'Cash') {
+            return acc + sale.totalAmount;
+        }
+        return acc;
+    }, 0);
+
+    const totalTransfer = filteredSales.reduce((acc, sale) => {
+        if (sale.paymentMethod === 'Card' || sale.paymentMethod === 'Digital') {
+            return acc + sale.totalAmount;
+        }
+        return acc;
+    }, 0);
+
     if (loading) return <div>Loading sales reports...</div>;
 
     return (
         <>
             <div>
                 <h1 className="text-2xl font-bold text-gray-800 mb-4">Sales Reports</h1>
+                <div className="flex justify-end mb-4">
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="date"
+                            id="startDate"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="p-2 border rounded-md text-sm"
+                        />
+                        <span className="text-gray-500">-</span>
+                        <input
+                            type="date"
+                            id="endDate"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="p-2 border rounded-md text-sm"
+                        />
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div className="bg-green-100 p-4 rounded-lg shadow">
+                        <h3 className="text-sm font-medium text-green-800">Total Cash</h3>
+                        <p className="text-2xl font-semibold text-green-900">Rp{totalCash.toLocaleString('id-ID')}</p>
+                    </div>
+                    <div className="bg-blue-100 p-4 rounded-lg shadow">
+                        <h3 className="text-sm font-medium text-blue-800">Total Transfer</h3>
+                        <p className="text-2xl font-semibold text-blue-900">Rp{totalTransfer.toLocaleString('id-ID')}</p>
+                    </div>
+                </div>
+
                 <div className="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
@@ -153,7 +226,7 @@ const SalesReportsPage = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {sales.map(sale => (
+                            {filteredSales.map(sale => (
                                 <tr key={sale._id} className={sale.status === 'Retracted' ? 'bg-red-50' : ''}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(sale.createdAt).toLocaleString()}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.cashierId.username}</td>
