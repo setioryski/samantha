@@ -1,22 +1,26 @@
+// client/src/pages/TherapistsPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useToast } from '../context/ToastContext';
 import TherapistModal from '../components/TherapistModal';
 import ConfirmationModal from '../components/ConfirmationModal';
+import TherapistExpenseModal from '../components/TherapistExpenseModal'; // <-- Import the new modal
 
 const TherapistsPage = () => {
     const [therapists, setTherapists] = useState([]);
     const [loading, setLoading] = useState(true);
     const { showToast } = useToast();
-    
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [selectedTherapist, setSelectedTherapist] = useState(null);
+    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false); // <-- State for expense modal
+    const [therapistForExpenses, setTherapistForExpenses] = useState(null); // <-- Therapist for expense modal
 
     // State for the report
     const [reportData, setReportData] = useState([]);
     const [loadingReport, setLoadingReport] = useState(false);
-    
+
     // Helper function to format a date to YYYY-MM-DD string
     const formatDate = (date) => {
         const d = new Date(date);
@@ -26,7 +30,7 @@ const TherapistsPage = () => {
         const day = String(d.getDate()).padStart(2, '0');
         return `${year}-${month}-${day}`;
     };
-    
+
     // Set default dates to the start and end of the current month
     const getInitialDates = () => {
         const today = new Date();
@@ -34,9 +38,9 @@ const TherapistsPage = () => {
         const m = today.getMonth();
         const firstDay = new Date(y, m, 1);
         const lastDay = new Date(y, m + 1, 0);
-        return { 
-            firstDay: formatDate(firstDay), 
-            lastDay: formatDate(lastDay) 
+        return {
+            firstDay: formatDate(firstDay),
+            lastDay: formatDate(lastDay)
         };
     };
 
@@ -88,11 +92,19 @@ const TherapistsPage = () => {
         setSelectedTherapist(therapist);
         setIsConfirmOpen(true);
     };
-    
+
+    // Function to open the expense modal
+    const handleOpenExpenseModal = (therapist) => {
+        setTherapistForExpenses(therapist);
+        setIsExpenseModalOpen(true);
+    };
+
     const handleCloseModals = () => {
         setIsModalOpen(false);
         setIsConfirmOpen(false);
+        setIsExpenseModalOpen(false); // <-- Close expense modal too
         setSelectedTherapist(null);
+        setTherapistForExpenses(null); // <-- Clear therapist for expenses
     };
 
     const handleSaveTherapist = async (therapistData) => {
@@ -111,7 +123,7 @@ const TherapistsPage = () => {
             handleCloseModals();
         }
     };
-    
+
     const handleDeleteTherapist = async () => {
         if (!selectedTherapist) return;
         try {
@@ -119,7 +131,12 @@ const TherapistsPage = () => {
             showToast('Therapist deleted successfully!', 'success');
             fetchTherapists();
         } catch (error) {
-            showToast(error.response?.data?.message || 'Failed to delete therapist.', 'error');
+            // Check if error message indicates related expenses
+            if (error.response?.data?.message.includes('expenses')) {
+                 showToast('Cannot delete therapist with associated expenses. Please reassign or delete expenses first.', 'error');
+            } else {
+                showToast(error.response?.data?.message || 'Failed to delete therapist.', 'error');
+            }
         } finally {
             handleCloseModals();
         }
@@ -168,6 +185,8 @@ const TherapistsPage = () => {
                                         </button>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                                        {/* ADDED: Expenses Button */}
+                                        <button onClick={() => handleOpenExpenseModal(therapist)} className="text-green-600 hover:text-green-900">Expenses</button>
                                         <button onClick={() => handleOpenModal(therapist)} className="text-indigo-600 hover:text-indigo-900">Edit</button>
                                         <button onClick={() => handleOpenConfirm(therapist)} className="text-red-600 hover:text-red-900">Delete</button>
                                     </td>
@@ -179,7 +198,8 @@ const TherapistsPage = () => {
             </div>
 
             {/* Top 10 Therapists Report Section */}
-            <div>
+            {/* ... (keep report section as is) ... */}
+             <div>
                  <h1 className="text-2xl font-bold text-gray-800 mb-4">Top 10 Therapists Report</h1>
                  <div className="bg-white p-6 rounded-lg shadow-md">
                      <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
@@ -239,9 +259,13 @@ const TherapistsPage = () => {
                     </div>
                  </div>
             </div>
-            
+
+
+            {/* Modals */}
             {isModalOpen && <TherapistModal therapist={selectedTherapist} onClose={handleCloseModals} onSave={handleSaveTherapist} />}
-            {isConfirmOpen && <ConfirmationModal isOpen={isConfirmOpen} onClose={handleCloseModals} onConfirm={handleDeleteTherapist} title="Delete Therapist" message={`Are you sure you want to delete ${selectedTherapist?.name}?`} />}
+            {isConfirmOpen && <ConfirmationModal isOpen={isConfirmOpen} onClose={handleCloseModals} onConfirm={handleDeleteTherapist} title="Delete Therapist" message={`Are you sure you want to delete ${selectedTherapist?.name}? This may fail if the therapist has associated sales or expenses.`} />}
+            {/* ADDED: Render Expense Modal */}
+            {isExpenseModalOpen && therapistForExpenses && <TherapistExpenseModal therapist={therapistForExpenses} onClose={handleCloseModals} />}
         </div>
     );
 };

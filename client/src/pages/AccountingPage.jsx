@@ -1,3 +1,4 @@
+// client/src/pages/AccountingPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useToast } from '../context/ToastContext';
@@ -23,27 +24,45 @@ const AccountingPage = () => {
     // State for date filtering
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    // State for category filtering (optional, can be added later)
+    // const [filterCategory, setFilterCategory] = useState('');
 
     const fetchData = useCallback(async () => {
+        setLoading(true);
         try {
+            // Build query parameters for expenses based on filters
+            const expenseParams = new URLSearchParams();
+            if (startDate) expenseParams.append('startDate', startDate);
+            if (endDate) expenseParams.append('endDate', endDate);
+            // if (filterCategory) expenseParams.append('category', filterCategory); // Uncomment to add category filter
+
+            // Build query parameters for sales based on filters
+            const saleParams = new URLSearchParams();
+            if (startDate) saleParams.append('startDate', startDate);
+            if (endDate) saleParams.append('endDate', endDate);
+            // Add other relevant sales filters if needed (e.g., paymentStatus='Paid')
+            saleParams.append('paymentStatus', 'Paid');
+            saleParams.append('status', 'Completed');
+
+
             const [expensesRes, salesRes] = await Promise.all([
-                api.get('/expenses'),
-                api.get('/sales')
+                api.get(`/expenses?${expenseParams.toString()}`),
+                api.get(`/sales?${saleParams.toString()}`) // Fetch only completed, paid sales matching date range
             ]);
             setExpenses(expensesRes.data);
-            // We still get all completed sales, but will filter by payment status on the client
-            setSales(salesRes.data.filter(sale => sale.status === 'Completed'));
+            setSales(salesRes.data); // Already filtered by backend
         } catch (error) {
             console.error("Failed to fetch accounting data", error);
             showToast('Failed to load accounting data.', 'error');
         } finally {
             setLoading(false);
         }
-    }, [showToast]);
+    // Update dependencies to refetch when filters change
+    }, [showToast, startDate, endDate /*, filterCategory*/]);
 
     useEffect(() => {
         fetchData();
-    }, [fetchData]);
+    }, [fetchData]); // fetchData now includes filter dependencies
 
     const handleAddExpense = async (e) => {
         e.preventDefault();
@@ -52,6 +71,7 @@ const AccountingPage = () => {
             return;
         }
         try {
+            // Note: Adding expense here won't link to a therapist unless you add a therapist selector
             const newExpense = { description, amount: Number(amount), category };
             await api.post('/expenses', newExpense);
             showToast('Expense added successfully!', 'success');
@@ -59,7 +79,7 @@ const AccountingPage = () => {
             setDescription('');
             setAmount('');
             setCategory('');
-            fetchData();
+            fetchData(); // Refresh data including new expense
         } catch (error) {
             console.error("Failed to add expense", error);
             showToast(error.response?.data?.message || 'Failed to add expense.', 'error');
@@ -79,94 +99,92 @@ const AccountingPage = () => {
             fetchData(); // Refresh the data
         } catch (error) {
             console.error("Failed to delete expense", error);
-            showToast(error.response?.data?.message || 'Failed to delete expense.', 'error');
+             // Check specific error message from backend
+            if (error.response?.status === 400 && error.response?.data?.message) {
+                 showToast(error.response.data.message, 'error');
+            } else {
+                 showToast('Failed to delete expense.', 'error');
+            }
         } finally {
             setIsConfirmModalOpen(false);
             setExpenseToDeleteId(null);
         }
     };
-    
-    // Filtered data based on date range
-    const filteredSales = sales.filter(sale => {
-        const saleDate = new Date(sale.createdAt);
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-        if (start) start.setHours(0, 0, 0, 0);
-        if (end) end.setHours(23, 59, 59, 999);
-        if (start && saleDate < start) return false;
-        if (end && saleDate > end) return false;
-        return true;
-    });
 
-    const filteredExpenses = expenses.filter(expense => {
-        const expenseDate = new Date(expense.date);
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-        if (start) start.setHours(0, 0, 0, 0);
-        if (end) end.setHours(23, 59, 59, 999);
-        if (start && expenseDate < start) return false;
-        if (end && expenseDate > end) return false;
-        return true;
-    });
-
-    // --- CORRECTED CALCULATIONS ---
-    const paidSales = filteredSales.filter(sale => sale.paymentStatus === 'Paid');
-
-    const totalRevenue = paidSales.reduce((acc, sale) => acc + sale.totalAmount, 0);
-    const totalCOGS = paidSales.reduce((acc, sale) =>
+    // Corrected Calculations only use state variables (filteredSales === sales now)
+    const totalRevenue = sales.reduce((acc, sale) => acc + sale.totalAmount, 0);
+    const totalCOGS = sales.reduce((acc, sale) =>
         acc + sale.items.reduce((itemAcc, item) => itemAcc + ((item.basePrice || 0) * item.quantity), 0),
     0);
     const grossProfit = totalRevenue - totalCOGS;
-    const totalExpenses = filteredExpenses.reduce((acc, expense) => acc + expense.amount, 0);
+    const totalExpenses = expenses.reduce((acc, expense) => acc + expense.amount, 0);
     const netIncome = grossProfit - totalExpenses;
+
 
     const handleExport = () => {
         setExporting(true);
 
+        // Use a timeout to allow the UI to update to "Exporting..."
         setTimeout(() => {
-            const wb = XLSX.utils.book_new();
+            try {
+                const wb = XLSX.utils.book_new();
 
-            // Summary Sheet
-            const summaryData = [
-                ["Financial Summary", ""],
-                ["Date Range", `${startDate || 'Start'} to ${endDate || 'End'}`],
-                ["", ""], // Spacer
-                ["Total Revenue", totalRevenue],
-                ["Cost of Goods Sold (COGS)", totalCOGS],
-                ["Gross Profit", grossProfit],
-                ["Total Expenses", totalExpenses],
-                ["Net Income", netIncome],
-            ];
-            const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
-            XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
+                // Summary Sheet
+                const summaryData = [
+                    ["Financial Summary", ""],
+                    ["Date Range", `${startDate || 'Start'} to ${endDate || 'End'}`],
+                    ["", ""], // Spacer
+                    ["Total Revenue (Paid Sales)", totalRevenue],
+                    ["Cost of Goods Sold (COGS)", totalCOGS],
+                    ["Gross Profit", grossProfit],
+                    ["Total Expenses", totalExpenses],
+                    ["Net Income", netIncome],
+                ];
+                const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
+                // Adjust column widths for Summary
+                 summaryWs['!cols'] = [{ wch: 25 }, { wch: 20 }];
+                XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
 
-            // Sales Sheet
-            const salesData = paidSales.map(sale => ({
-                Date: new Date(sale.createdAt).toLocaleString('id-ID'),
-                Cashier: sale.cashierId.username,
-                Items: sale.items.map(i => `${i.quantity}x ${i.name}`).join(', '),
-                Amount: sale.totalAmount,
-                PaymentMethod: sale.paymentMethod,
-            }));
-            const salesWs = XLSX.utils.json_to_sheet(salesData);
-            XLSX.utils.book_append_sheet(wb, salesWs, "Income from Sales");
+                // Sales Sheet (Already filtered paid/completed sales)
+                const salesData = sales.map(sale => ({
+                    Date: new Date(sale.createdAt).toLocaleString('id-ID'),
+                    Cashier: sale.cashierId.username,
+                    Customer: sale.customerId?.name || 'Walk-in',
+                    Therapist: sale.therapistId?.name || 'N/A',
+                    Items: sale.items.map(i => `${i.quantity}x ${i.name}`).join(', '),
+                    Amount: sale.totalAmount,
+                    PaymentMethod: sale.paymentMethod,
+                }));
+                const salesWs = XLSX.utils.json_to_sheet(salesData);
+                 // Adjust column widths for Sales
+                 salesWs['!cols'] = [ { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 40 }, { wch: 15 }, { wch: 15 }];
+                XLSX.utils.book_append_sheet(wb, salesWs, "Income from Sales");
 
-            // Expenses Sheet
-            const expensesData = filteredExpenses.map(exp => ({
-                Date: new Date(exp.date).toLocaleDateString('id-ID'),
-                Description: exp.description,
-                Category: exp.category,
-                Amount: exp.amount
-            }));
-            const expensesWs = XLSX.utils.json_to_sheet(expensesData);
-            XLSX.utils.book_append_sheet(wb, expensesWs, "Expenses");
+                // Expenses Sheet (using filtered expenses)
+                const expensesData = expenses.map(exp => ({
+                    Date: new Date(exp.date).toLocaleDateString('id-ID'),
+                    Description: exp.description,
+                    Category: exp.category,
+                    Therapist: exp.therapistId?.name || '', // Add Therapist Name
+                    Amount: exp.amount,
+                    EnteredBy: exp.createdBy?.username || 'N/A'
+                }));
+                const expensesWs = XLSX.utils.json_to_sheet(expensesData);
+                 // Adjust column widths for Expenses
+                 expensesWs['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
+                XLSX.utils.book_append_sheet(wb, expensesWs, "Expenses");
 
-            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-            const fileName = `Accounting_Report_${startDate || 'start'}_to_${endDate || 'end'}.xlsx`;
-            saveAs(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                const fileName = `Accounting_Report_${startDate || 'start'}_to_${endDate || 'end'}.xlsx`;
+                saveAs(new Blob([wbout], { type: 'application/octet-stream' }), fileName);
 
-            setExporting(false);
-        }, 500); // Simulate processing time
+            } catch (error) {
+                 console.error("Export Error:", error);
+                 showToast("Failed to export data to Excel.", "error");
+            } finally {
+                setExporting(false);
+            }
+        }, 100); // Short delay for UI update
     };
 
 
@@ -194,6 +212,11 @@ const AccountingPage = () => {
                         className="p-2 border rounded-md text-sm"
                     />
                 </div>
+                 {/* Optional: Add Category Filter Dropdown if needed */}
+                {/* <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="p-2 border rounded-md text-sm">
+                    <option value="">All Categories</option>
+                    {[...new Set(expenses.map(e => e.category))].sort().map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select> */}
                 <button
                   onClick={handleExport}
                   disabled={exporting}
@@ -227,24 +250,29 @@ const AccountingPage = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Income (Sales List) */}
                 <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
-                    <h2 className="text-lg font-semibold mb-4">Income from Sales</h2>
-                    <div className="overflow-x-auto">
+                    <h2 className="text-lg font-semibold mb-4">Income from Sales (Paid & Completed)</h2>
+                    <div className="overflow-x-auto max-h-[60vh]">
                         <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
+                            <thead className="bg-gray-50 sticky top-0">
                                 <tr>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Therapist</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {paidSales.map(sale => (
+                                {sales.map(sale => (
                                     <tr key={sale._id}>
-                                        <td className="px-6 py-4 whitespace-nowrap">{new Date(sale.createdAt).toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap">{sale.items.map(i => i.name).join(', ')}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-green-600 font-semibold">Rp{sale.totalAmount.toLocaleString('id-ID')}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(sale.createdAt).toLocaleDateString()}</td>
+                                        <td className="px-6 py-4 whitespace-normal text-sm">{sale.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm">{sale.therapistId?.name || 'N/A'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">Rp{sale.totalAmount.toLocaleString('id-ID')}</td>
                                     </tr>
                                 ))}
+                                {sales.length === 0 && (
+                                     <tr><td colSpan="4" className="text-center py-4 text-gray-500">No paid sales found for this period.</td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -254,7 +282,7 @@ const AccountingPage = () => {
                 <div className="lg:col-span-1 space-y-8">
                     {/* Add Expense Form */}
                     <div className="bg-white p-6 rounded-lg shadow-md h-fit">
-                        <h2 className="text-lg font-semibold mb-4">Add New Expense</h2>
+                        <h2 className="text-lg font-semibold mb-4">Add Manual Expense</h2>
                         <form onSubmit={handleAddExpense} className="space-y-4">
                             <div>
                                 <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
@@ -306,29 +334,45 @@ const AccountingPage = () => {
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-50 sticky top-0">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        {/* ADDED Therapist Column Header */}
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Desc / Therapist</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {filteredExpenses.map(expense => (
+                                    {expenses.map(expense => (
                                         <tr key={expense._id}>
-                                            <td className="px-6 py-4 whitespace-nowrap">
+                                            <td className="px-4 py-4 whitespace-normal">
                                                 <div className="text-sm text-gray-900">{expense.description}</div>
-                                                <div className="text-xs text-gray-500">{expense.category} | {new Date(expense.date).toLocaleDateString()}</div>
+                                                {/* Display Therapist Name if available */}
+                                                {expense.therapistId?.name && (
+                                                    <div className="text-xs text-blue-600">({expense.therapistId.name})</div>
+                                                )}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-red-600 font-semibold">Rp{expense.amount.toLocaleString('id-ID')}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <button
-                                                    onClick={() => handleDeleteClick(expense._id)}
-                                                    className="text-red-600 hover:text-red-900"
-                                                >
-                                                    Delete
-                                                </button>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{expense.category}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(expense.date).toLocaleDateString()}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-right text-red-600 font-semibold">Rp{expense.amount.toLocaleString('id-ID')}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                {/* Prevent deletion of automatic expenses */}
+                                                {!(expense.category === 'Therapist Fee' || expense.category === 'Transportation' || expense.category === 'Stock Loss') || !expense.description.includes('Sale ID:') ? (
+                                                    <button
+                                                        onClick={() => handleDeleteClick(expense._id)}
+                                                        className="text-red-600 hover:text-red-900"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                ) : (
+                                                     <span className="text-xs text-gray-400 italic">Auto</span>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
+                                    {expenses.length === 0 && (
+                                         <tr><td colSpan="5" className="text-center py-4 text-gray-500">No expenses found for this period.</td></tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>

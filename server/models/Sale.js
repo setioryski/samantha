@@ -1,10 +1,12 @@
+// server/models/Sale.js
 const mongoose = require('mongoose');
 
 const SaleSchema = new mongoose.Schema({
   cashierId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', required: false },
+  // ADDED: therapistId reference
   therapistId: { type: mongoose.Schema.Types.ObjectId, ref: 'Therapist', required: false },
-  includeTherapistOnInvoice: { type: Boolean, default: false },
+  includeTherapistOnInvoice: { type: Boolean, default: false }, // Keep this if you want to show on invoice
   items: [{
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
     name: { type: String, required: true },
@@ -12,7 +14,7 @@ const SaleSchema = new mongoose.Schema({
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },
     note: { type: String, trim: true },
-    therapistFee: { type: Number, default: 0 }
+    therapistFee: { type: Number, default: 0 } // Keep this if calculating fees
   }],
   subtotal: { type: Number, required: true },
   discount: { type: Number, default: 0 },

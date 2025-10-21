@@ -1,3 +1,4 @@
+// client/src/pages/SalesReportsPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import InvoiceModal from '../components/InvoiceModal';
@@ -7,6 +8,7 @@ import { useToast } from '../context/ToastContext';
 
 const SalesReportsPage = () => {
     const [sales, setSales] = useState([]);
+    const [therapists, setTherapists] = useState([]); // <-- State for therapists list
     const [loading, setLoading] = useState(true);
     const [selectedSale, setSelectedSale] = useState(null);
     const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
@@ -16,37 +18,46 @@ const SalesReportsPage = () => {
     const [saleToPay, setSaleToPay] = useState(null);
     const [saleToDeleteId, setSaleToDeleteId] = useState(null);
     const { showToast } = useToast();
-    
-    const getToday = () => {
-        const today = new Date();
-        return today.toISOString().split('T')[0];
-    }
 
-    const getTomorrow = () => {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        return tomorrow.toISOString().split('T')[0];
-    }
+    // Filters State
+    const [filterTherapistId, setFilterTherapistId] = useState('');
+    const [filterStartDate, setFilterStartDate] = useState('');
+    const [filterEndDate, setFilterEndDate] = useState('');
+    const [filterPaymentStatus, setFilterPaymentStatus] = useState('');
+    const [filterStatus, setFilterStatus] = useState('');
 
-    const [startDate, setStartDate] = useState(getToday());
-    const [endDate, setEndDate] = useState(getTomorrow());
 
-    const fetchSales = useCallback(async () => {
+    // Combined fetch function for sales and therapists
+    const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('/sales');
-            setSales(data);
+            // Build query parameters
+            const params = new URLSearchParams();
+            if (filterTherapistId) params.append('therapistId', filterTherapistId);
+            if (filterStartDate) params.append('startDate', filterStartDate);
+            if (filterEndDate) params.append('endDate', filterEndDate);
+            if (filterPaymentStatus) params.append('paymentStatus', filterPaymentStatus);
+            if (filterStatus) params.append('status', filterStatus);
+
+            const [salesRes, therapistsRes] = await Promise.all([
+                api.get(`/sales?${params.toString()}`), // Pass filters to sales API
+                api.get('/therapists') // Fetch all therapists for the filter dropdown
+            ]);
+            setSales(salesRes.data);
+            setTherapists(therapistsRes.data);
         } catch (error) {
-            console.error("Failed to fetch sales", error);
-            showToast('Failed to fetch sales reports.', 'error');
+            console.error("Failed to fetch data", error);
+            showToast('Failed to fetch sales reports or therapists.', 'error');
         } finally {
             setLoading(false);
         }
-    }, [showToast]);
+    // Include filter states in dependencies to refetch when they change
+    }, [showToast, filterTherapistId, filterStartDate, filterEndDate, filterPaymentStatus, filterStatus]);
 
     useEffect(() => {
-        fetchSales();
-    }, [fetchSales]);
+        fetchData();
+    }, [fetchData]); // fetchData already includes filter dependencies
+
 
     const handlePrintClick = async (saleId) => {
         try {
@@ -58,18 +69,20 @@ const SalesReportsPage = () => {
             showToast('Failed to fetch sale details.', 'error');
         }
     };
-    
-    // Opens the confirmation modal
+
+    // Opens the confirmation modal for retraction
     const handleRetractClick = (saleId) => {
         setSaleToRetractId(saleId);
         setIsConfirmModalOpen(true);
     };
 
+    // Opens the confirmation modal for deletion
     const handleDeleteClick = (saleId) => {
         setSaleToDeleteId(saleId);
-        setIsConfirmModalOpen(true);
+        setIsConfirmModalOpen(true); // Re-use the same confirmation modal state variable
     };
 
+    // Opens the checkout modal for paying an unpaid order
     const handlePayClick = (sale) => {
         setSaleToPay(sale);
         setIsCheckoutModalOpen(true);
@@ -81,7 +94,7 @@ const SalesReportsPage = () => {
         try {
             await api.put(`/sales/${saleToRetractId}/retract`);
             showToast('Sale retracted successfully!', 'success');
-            fetchSales(); // Refresh the sales list
+            fetchData(); // Refresh the sales list
         } catch (error) {
             console.error("Failed to retract sale", error);
             showToast(error.response?.data?.message || 'Failed to retract sale.', 'error');
@@ -91,12 +104,13 @@ const SalesReportsPage = () => {
         }
     };
 
+    // The actual deletion logic, called when confirm is clicked in the modal
     const confirmDeletion = async () => {
         if (!saleToDeleteId) return;
         try {
             await api.delete(`/sales/${saleToDeleteId}`);
             showToast('Sale deleted successfully!', 'success');
-            fetchSales(); // Refresh the sales list
+            fetchData(); // Refresh the sales list
         } catch (error) {
             console.error("Failed to delete sale", error);
             showToast(error.response?.data?.message || 'Failed to delete sale.', 'error');
@@ -106,15 +120,16 @@ const SalesReportsPage = () => {
         }
     };
 
+    // Handles payment confirmation from the checkout modal (for unpaid orders)
     const handleConfirmCheckout = async (paymentMethod) => {
         if (!saleToPay) return;
         try {
             await api.put(`/sales/${saleToPay._id}/pay`, { paymentMethod });
             showToast('Payment successful!', 'success');
-            fetchSales(); // Refresh the sales list
-            const { data } = await api.get(`/sales/${saleToPay._id}`);
-            setSelectedSale(data);
-            setIsInvoiceModalOpen(true);
+            fetchData(); // Refresh the sales list
+            const { data } = await api.get(`/sales/${saleToPay._id}`); // Fetch updated sale to show invoice
+            setSelectedSale(data); // Set the newly paid sale for the invoice
+            setIsInvoiceModalOpen(true); // Open the invoice modal
         } catch (error) {
             showToast(error.response?.data?.message || 'Payment failed.', 'error');
         } finally {
@@ -122,6 +137,7 @@ const SalesReportsPage = () => {
             setSaleToPay(null);
         }
     };
+
 
     const getStatusBadge = (status) => {
         switch (status) {
@@ -145,70 +161,79 @@ const SalesReportsPage = () => {
         }
     };
 
-    const filteredSales = sales.filter(sale => {
-        const saleDate = new Date(sale.createdAt);
-        const start = startDate ? new Date(startDate) : null;
-        const end = endDate ? new Date(endDate) : null;
-
-        if(start) start.setHours(0, 0, 0, 0);
-        if(end) end.setHours(23, 59, 59, 999);
-
-        if (start && saleDate < start) return false;
-        if (end && saleDate > end) return false;
-
-        return true;
-    });
-
-    const totalCash = filteredSales.reduce((acc, sale) => {
-        if (sale.paymentMethod === 'Cash') {
-            return acc + sale.totalAmount;
-        }
-        return acc;
-    }, 0);
-
-    const totalTransfer = filteredSales.reduce((acc, sale) => {
-        if (sale.paymentMethod === 'Card' || sale.paymentMethod === 'Digital') {
-            return acc + sale.totalAmount;
-        }
-        return acc;
-    }, 0);
-
     if (loading) return <div>Loading sales reports...</div>;
 
     return (
         <>
             <div>
                 <h1 className="text-2xl font-bold text-gray-800 mb-4">Sales Reports</h1>
-                <div className="flex justify-end mb-4">
-                    <div className="flex items-center gap-2">
+
+                {/* Filters Section */}
+                <div className="bg-white p-4 rounded-lg shadow-md mb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 items-end">
+                     <div>
+                        <label htmlFor="filterTherapist" className="block text-xs font-medium text-gray-500">Therapist</label>
+                        <select
+                            id="filterTherapist"
+                            value={filterTherapistId}
+                            onChange={e => setFilterTherapistId(e.target.value)}
+                            className="mt-1 w-full p-2 border rounded-md text-sm"
+                        >
+                            <option value="">All Therapists</option>
+                            {therapists.map(t => (
+                                <option key={t._id} value={t._id}>{t.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                     <div>
+                        <label htmlFor="filterStartDate" className="block text-xs font-medium text-gray-500">Start Date</label>
                         <input
                             type="date"
-                            id="startDate"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            className="p-2 border rounded-md text-sm"
-                        />
-                        <span className="text-gray-500">-</span>
-                        <input
-                            type="date"
-                            id="endDate"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            className="p-2 border rounded-md text-sm"
+                            id="filterStartDate"
+                            value={filterStartDate}
+                            onChange={e => setFilterStartDate(e.target.value)}
+                            className="mt-1 w-full p-2 border rounded-md text-sm"
                         />
                     </div>
+                    <div>
+                        <label htmlFor="filterEndDate" className="block text-xs font-medium text-gray-500">End Date</label>
+                        <input
+                            type="date"
+                            id="filterEndDate"
+                            value={filterEndDate}
+                            onChange={e => setFilterEndDate(e.target.value)}
+                            className="mt-1 w-full p-2 border rounded-md text-sm"
+                        />
+                    </div>
+                     <div>
+                        <label htmlFor="filterPaymentStatus" className="block text-xs font-medium text-gray-500">Payment</label>
+                        <select
+                            id="filterPaymentStatus"
+                            value={filterPaymentStatus}
+                            onChange={e => setFilterPaymentStatus(e.target.value)}
+                            className="mt-1 w-full p-2 border rounded-md text-sm"
+                        >
+                            <option value="">All</option>
+                            <option value="Paid">Paid</option>
+                            <option value="Unpaid">Unpaid</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label htmlFor="filterStatus" className="block text-xs font-medium text-gray-500">Status</label>
+                        <select
+                            id="filterStatus"
+                            value={filterStatus}
+                            onChange={e => setFilterStatus(e.target.value)}
+                            className="mt-1 w-full p-2 border rounded-md text-sm"
+                        >
+                            <option value="">All</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Retracted">Retracted</option>
+                        </select>
+                    </div>
+                    {/* Optionally add a button to apply filters if you don't want it to filter on every change */}
+                    {/* <button onClick={fetchData} className="bg-blue-500 text-white p-2 rounded-md">Apply Filters</button> */}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div className="bg-green-100 p-4 rounded-lg shadow">
-                        <h3 className="text-sm font-medium text-green-800">Total Cash</h3>
-                        <p className="text-2xl font-semibold text-green-900">Rp{totalCash.toLocaleString('id-ID')}</p>
-                    </div>
-                    <div className="bg-blue-100 p-4 rounded-lg shadow">
-                        <h3 className="text-sm font-medium text-blue-800">Total Transfer</h3>
-                        <p className="text-2xl font-semibold text-blue-900">Rp{totalTransfer.toLocaleString('id-ID')}</p>
-                    </div>
-                </div>
 
                 <div className="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -217,6 +242,7 @@ const SalesReportsPage = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cashier</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Therapist</th> {/* <-- Added Therapist Header */}
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items Sold</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Method</th>
@@ -226,15 +252,17 @@ const SalesReportsPage = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {filteredSales.map(sale => (
+                            {sales.map(sale => (
                                 <tr key={sale._id} className={sale.status === 'Retracted' ? 'bg-red-50' : ''}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(sale.createdAt).toLocaleString()}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.cashierId.username}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.customerId?.name || 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.therapistId?.name || 'N/A'}</td> {/* <-- Display Therapist Name */}
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         <ul className="list-disc list-inside">
                                             {sale.items.map(item => (
-                                                <li key={item._id}>{item.quantity}x {item.name}</li>
+                                                // Ensure a unique key if _id isn't always present on items from old data
+                                                <li key={item._id || `${item.productId}-${item.name}`}>{item.quantity}x {item.name}</li>
                                             ))}
                                         </ul>
                                     </td>
@@ -243,6 +271,7 @@ const SalesReportsPage = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getPaymentStatusBadge(sale.paymentStatus)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getStatusBadge(sale.status)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
+                                         {/* Pay button only if Unpaid and Completed */}
                                         {sale.paymentStatus === 'Unpaid' && sale.status === 'Completed' && (
                                             <button
                                                 onClick={() => handlePayClick(sale)}
@@ -251,35 +280,47 @@ const SalesReportsPage = () => {
                                                 Pay
                                             </button>
                                         )}
+                                        {/* Invoice button always available */}
                                         <button
                                             onClick={() => handlePrintClick(sale._id)}
                                             className="text-indigo-600 hover:text-indigo-900"
                                         >
                                             Invoice
                                         </button>
-                                        {sale.status !== 'Retracted' ? (
+                                        {/* Retract button only if Completed */}
+                                        {sale.status === 'Completed' ? (
                                         <button
                                             onClick={() => handleRetractClick(sale._id)}
                                             className="text-red-600 hover:text-red-900"
                                         >
                                             Retract
                                         </button>
-                                        ) : (
+                                        /* Delete button only if Retracted */
+                                        ) : sale.status === 'Retracted' ? (
                                         <button
                                             onClick={() => handleDeleteClick(sale._id)}
                                             className="text-red-600 hover:text-red-900"
                                         >
                                             Delete
                                         </button>
-                                        )}
+                                        ) : null} {/* Render nothing if status is neither */}
                                     </td>
                                 </tr>
                             ))}
+                             {/* Display message if no sales match filters */}
+                            {sales.length === 0 && !loading && (
+                                <tr>
+                                    <td colSpan="10" className="text-center py-4 text-gray-500">
+                                        No sales found matching the criteria.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
+            {/* Invoice Modal */}
             {isInvoiceModalOpen && (
                 <InvoiceModal
                     sale={selectedSale}
@@ -287,6 +328,7 @@ const SalesReportsPage = () => {
                 />
             )}
 
+            {/* Checkout Modal (for paying unpaid orders) */}
             {isCheckoutModalOpen && (
                 <CheckoutModal
                     totalAmount={saleToPay ? saleToPay.totalAmount : 0}
@@ -298,6 +340,7 @@ const SalesReportsPage = () => {
                 />
             )}
 
+            {/* Confirmation Modal for Retraction */}
             <ConfirmationModal
                 isOpen={isConfirmModalOpen && !!saleToRetractId}
                 onClose={() => {
@@ -309,6 +352,7 @@ const SalesReportsPage = () => {
                 message="Are you sure you want to retract this sale? This action cannot be undone and will restore the items to inventory."
             />
 
+            {/* Confirmation Modal for Deletion */}
             <ConfirmationModal
                 isOpen={isConfirmModalOpen && !!saleToDeleteId}
                 onClose={() => {

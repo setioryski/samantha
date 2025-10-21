@@ -1,3 +1,4 @@
+// client/src/components/Layout.jsx
 import React, { useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -33,16 +34,22 @@ const Layout = () => {
             <div className="flex items-center space-x-4">
               {/* Use dynamic company name */}
               <span className="text-xl font-bold text-sky-800">{settings.companyName}</span>
-              <div className="hidden md:flex items-center space-x-2">
+              {/* Navigation Links - Conditionally Rendered */}
+              <nav className="hidden md:flex items-center space-x-1 flex-wrap"> {/* Use flex-wrap */}
                 {user?.role === 'Admin' && (
                   <>
-                    <NavLink to="/admin" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Dashboard</NavLink>
+                    <NavLink to="/admin" end className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Dashboard</NavLink>
                     <NavLink to="/pos" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>POS</NavLink>
                     <NavLink to="/admin/inventory" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Inventory</NavLink>
                     <NavLink to="/admin/categories" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Categories</NavLink>
-                    <NavLink to="/admin/users" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Users</NavLink>
-                    <NavLink to="/admin/accounting" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Accounting</NavLink>
+                    <NavLink to="/admin/vouchers" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Vouchers</NavLink>
+                    <NavLink to="/admin/therapists" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Therapists</NavLink>
+                    <NavLink to="/admin/customers" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Customers</NavLink>
                     <NavLink to="/admin/sales" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Sales</NavLink>
+                    <NavLink to="/admin/accounting" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Accounting</NavLink>
+                    <NavLink to="/admin/reports/all-selling" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Selling Report</NavLink>
+                    <NavLink to="/admin/users" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Users</NavLink>
+                    <NavLink to="/admin/settings" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Settings</NavLink>
                   </>
                 )}
                 {user?.role === 'Cashier' && (
@@ -51,9 +58,9 @@ const Layout = () => {
                     <NavLink to="/admin/customers" className={({isActive}) => `${commonLinkClasses} ${isActive ? activeLinkClasses : inactiveLinkClasses}`}>Customers</NavLink>
                   </>
                 )}
-              </div>
+              </nav>
             </div>
-            
+
             <div className="flex items-center space-x-3">
               <span className="text-sm text-gray-600 hidden sm:block">
                 Welcome, <span className="font-medium">{user?.username}</span> ({user?.role})

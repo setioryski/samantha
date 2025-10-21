@@ -112,12 +112,12 @@ const POSPage = () => {
             setLoading(false);
         }
     }, [showToast]);
-    
+
     useEffect(() => {
         fetchInitialData();
         fetchTodaysSales();
     }, [fetchInitialData, fetchTodaysSales]);
-    
+
     const resetCart = () => {
         setCart([]);
         setSelectedCustomer(null);
@@ -208,7 +208,7 @@ const POSPage = () => {
         }
         setIsConfirmOrderOpen(true);
     };
-    
+
     const handlePayLater = async () => {
         setIsConfirmOrderOpen(false);
         const saleData = {
@@ -285,7 +285,7 @@ const POSPage = () => {
             }
         }
     };
-    
+
     const handlePayForUnpaidOrder = (sale) => {
         setSaleToPay(sale);
         setIsCheckoutOpen(true);
@@ -320,7 +320,7 @@ const POSPage = () => {
             showToast(error.response?.data?.message || 'Failed to add customer.', 'error');
         }
     };
-    
+
     const handleSaveTherapist = async (therapistData) => {
         try {
             const { data: newTherapist } = await api.post('/therapists', therapistData);
@@ -338,7 +338,7 @@ const POSPage = () => {
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-    
+
     const filteredCustomers = customers.filter(c =>
         c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
         (c.phone && c.phone.includes(customerSearch))
@@ -518,7 +518,7 @@ const POSPage = () => {
                                 ))}
                              </select>
                         </div>
-                        
+
                          {/* Manual Fees Section */}
                         <div className="space-y-3 text-sm mb-4">
                             <div className="flex items-center gap-2">
@@ -684,7 +684,7 @@ const POSPage = () => {
                     onSave={handleSaveCustomer}
                 />
             )}
-            
+
             {viewingSale && (
                 <SaleDetailsModal sale={viewingSale} onClose={() => setViewingSale(null)} />
             )}
@@ -710,4 +710,4 @@ const POSPage = () => {
     );
 };
 
-export default POSPage;
+export default POSPage; 

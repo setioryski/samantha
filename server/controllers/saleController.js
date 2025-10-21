@@ -1,3 +1,4 @@
+// server/controllers/saleController.js
 const mongoose = require('mongoose');
 const Sale = require('../models/Sale');
 const Product = require('../models/Product');
@@ -57,11 +58,11 @@ exports.getTopProducts = async (req, res) => {
 // @route   POST /api/sales
 // @access  Private
 exports.addSale = async (req, res) => {
-  const { 
-    items, subtotal, discount, voucherCode, totalAmount, paymentMethod, 
-    customerId, paymentStatus, therapistId, includeTherapistOnInvoice,
-    additionalFee, transportationFee 
-  } = req.body;
+  const {
+    items, subtotal, discount, voucherCode, totalAmount, paymentMethod,
+    customerId, paymentStatus, therapistId, includeTherapistOnInvoice, // <-- therapistId added here
+    additionalFee, transportationFee
+  } = req.body; // <-- Destructure therapistId
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: 'No order items' });
@@ -74,7 +75,7 @@ exports.addSale = async (req, res) => {
     const productIds = items.map(item => item.productId);
     const products = await Product.find({ '_id': { $in: productIds } }).session(session);
     let therapist = null;
-    if (therapistId) {
+    if (therapistId) { // Check if therapistId is provided
         therapist = await Therapist.findById(therapistId).session(session);
         if (!therapist) {
             throw new Error(`Therapist with id ${therapistId} not found.`);
@@ -96,7 +97,7 @@ exports.addSale = async (req, res) => {
         if (product.stock < item.quantity) {
             throw new Error(`Not enough stock for ${item.name}. Available: ${product.stock}, Requested: ${item.quantity}`);
         }
-        
+
         let therapistFee = 0;
         if (therapist && therapist.feePercentage > 0) {
             therapistFee = (item.price * item.quantity) * (therapist.feePercentage / 100);
@@ -114,7 +115,7 @@ exports.addSale = async (req, res) => {
       items: saleItems,
       cashierId: req.user._id,
       customerId,
-      therapistId,
+      therapistId, // <-- Include therapistId
       includeTherapistOnInvoice,
       subtotal,
       discount,
@@ -135,7 +136,7 @@ exports.addSale = async (req, res) => {
         $inc: { stock: -item.quantity }
       }, { session });
     }
-    
+
     // If the sale is paid, handle therapist and transportation fees as expenses
     if (paymentStatus === 'Paid') {
         const totalTherapistFee = saleItems.reduce((acc, item) => acc + item.therapistFee, 0);
@@ -159,13 +160,12 @@ exports.addSale = async (req, res) => {
         }
     }
 
-
     await session.commitTransaction();
 
     const populatedSale = await Sale.findById(createdSale._id)
         .populate('cashierId', 'username')
         .populate('customerId', 'name phone')
-        .populate('therapistId', 'name');
+        .populate('therapistId', 'name'); // <-- Populate therapist name
     res.status(201).json(populatedSale);
 
   } catch (error) {
@@ -202,10 +202,10 @@ exports.updateSale = async (req, res) => {
         for (const productId of productIds) {
             const originalQty = originalItems.get(productId) || 0;
             const newQty = newItems.get(productId) || 0;
-            const diff = originalQty - newQty; 
+            const diff = originalQty - newQty;
 
             if (diff !== 0) {
-                 await Product.findByIdAndUpdate(productId, 
+                 await Product.findByIdAndUpdate(productId,
                     { $inc: { stock: diff } },
                     { session }
                 );
@@ -213,12 +213,18 @@ exports.updateSale = async (req, res) => {
         }
 
         sale.items = items;
-        sale.totalAmount = totalAmount;
-        
+        sale.totalAmount = totalAmount; // Update total amount based on potentially changed items/fees if logic exists
+
         await sale.save({ session });
         await session.commitTransaction();
 
-        res.json(sale);
+        // Repopulate necessary fields before sending response
+        const populatedSale = await Sale.findById(sale._id)
+            .populate('cashierId', 'username')
+            .populate('customerId', 'name phone')
+            .populate('therapistId', 'name');
+
+        res.json(populatedSale);
 
     } catch (error) {
         await session.abortTransaction();
@@ -242,10 +248,10 @@ exports.updateSaleToPaid = async (req, res) => {
     if (sale.paymentStatus === 'Paid') {
         return res.status(400).json({ message: 'Sale has already been paid' });
     }
-    
+
     const session = await mongoose.startSession();
     session.startTransaction();
-    
+
     try {
         sale.paymentStatus = 'Paid';
         sale.paymentMethod = paymentMethod;
@@ -258,12 +264,12 @@ exports.updateSaleToPaid = async (req, res) => {
                     description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`,
                     amount: totalTherapistFee,
                     category: 'Therapist Fee',
-                    createdBy: req.user._id, 
+                    createdBy: req.user._id,
                 });
                 await expense.save({ session });
             }
         }
-        
+
         // Create an expense for the transportation fee
         if (sale.transportationFee && sale.transportationFee.amount > 0) {
             const transportExpense = new Expense({
@@ -278,7 +284,14 @@ exports.updateSaleToPaid = async (req, res) => {
 
         const updatedSale = await sale.save({ session });
         await session.commitTransaction();
-        res.json(updatedSale);
+
+         // Repopulate necessary fields before sending response
+        const populatedSale = await Sale.findById(updatedSale._id)
+            .populate('cashierId', 'username')
+            .populate('customerId', 'name phone address') // Ensure address is populated if needed by invoice
+            .populate('therapistId', 'name');
+
+        res.json(populatedSale);
     } catch (error) {
         await session.abortTransaction();
         console.error(`Sale payment update error: ${error.message}`);
@@ -308,11 +321,13 @@ exports.retractSale = async (req, res) => {
     try {
         // Restore stock for all retracted items
         for (const item of sale.items) {
-            await Product.findByIdAndUpdate(item.productId, {
+            // Ensure productId is accessed correctly, might be populated
+            const productId = item.productId._id ? item.productId._id : item.productId;
+            await Product.findByIdAndUpdate(productId, {
                 $inc: { stock: +item.quantity }
             }, { session });
         }
-        
+
         // If the sale was paid, retract any associated expenses
         if (sale.paymentStatus === 'Paid') {
             // Retract therapist fee
@@ -334,7 +349,10 @@ exports.retractSale = async (req, res) => {
         const updatedSale = await sale.save({ session });
         await session.commitTransaction();
 
-        const populatedSale = await Sale.findById(updatedSale._id).populate('cashierId', 'username');
+        const populatedSale = await Sale.findById(updatedSale._id)
+            .populate('cashierId', 'username')
+            .populate('customerId', 'name')
+            .populate('therapistId', 'name');
         res.json(populatedSale);
 
     } catch (error) {
@@ -369,30 +387,62 @@ exports.deleteSale = async (req, res) => {
     }
 };
 
-// @desc    Get all sales
+// @desc    Get all sales (with filtering)
 // @route   GET /api/sales
 // @access  Private/Admin
 exports.getSales = async (req, res) => {
   try {
-    const sales = await Sale.find({}).sort({ createdAt: -1 })
+    const filter = {};
+    const { therapistId, startDate, endDate, paymentStatus, status } = req.query; // Add filters from query
+
+    if (therapistId) {
+      filter.therapistId = therapistId;
+    }
+    if (paymentStatus) {
+      filter.paymentStatus = paymentStatus;
+    }
+    if (status) {
+      filter.status = status;
+    }
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filter.createdAt = { $gte: start, $lte: end };
+    } else if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      filter.createdAt = { $gte: start };
+    } else if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filter.createdAt = { $lte: end };
+    }
+
+
+    const sales = await Sale.find(filter).sort({ createdAt: -1 }) // Apply filter
         .populate('cashierId', 'username')
-        .populate('customerId', 'name');
+        .populate('customerId', 'name')
+        .populate('therapistId', 'name'); // <-- Populate therapist name
     res.json(sales);
   } catch (error) {
+    console.error(`Get Sales Error: ${error.message}`);
     res.status(500).json({ message: `Server Error: ${error.message}` });
   }
 };
 
+
 // @desc    Get sale by ID
 // @route   GET /api/sales/:id
-// @access  Private/Admin
+// @access  Private
 exports.getSaleById = async (req, res) => {
     try {
         const sale = await Sale.findById(req.params.id)
             .populate('cashierId', 'username')
-            .populate('items.productId', 'sku')
+            .populate('items.productId', 'sku') // Keep populating SKU if needed
             .populate('customerId', 'name phone address')
-            .populate('therapistId', 'name');
+            .populate('therapistId', 'name'); // <-- Populate therapist name
         if (sale) {
             res.json(sale);
         } else {
@@ -419,16 +469,77 @@ exports.getTodaysSales = async (req, res) => {
         $gte: today,
         $lt: tomorrow,
       },
-      status: 'Completed',
+      // You might want to filter by status: 'Completed' here too, depending on requirements
+      // status: 'Completed',
     }).sort({ createdAt: -1 })
       .populate('cashierId', 'username')
       .populate('customerId', 'name')
-      .populate('items.productId', 'name sku');
+      .populate('items.productId', 'name sku')
+      .populate('therapistId', 'name'); // Populate therapist
 
-    const totalRevenue = sales.filter(s => s.paymentStatus === 'Paid').reduce((acc, sale) => acc + sale.totalAmount, 0);
+    // Calculate revenue only from 'Completed' and 'Paid' sales
+    const totalRevenue = sales
+      .filter(s => s.status === 'Completed' && s.paymentStatus === 'Paid')
+      .reduce((acc, sale) => acc + sale.totalAmount, 0);
 
     res.json({ sales, totalRevenue });
   } catch (error) {
     res.status(500).json({ message: `Server Error: ${error.message}` });
   }
+};
+
+// --- Therapist Report Function ---
+// Moved from the end to keep related functions together
+// @desc    Get therapist performance report
+// @route   GET /api/therapists/report (Note: This might be better under therapistRoutes, but included here as requested)
+// @access  Private/Admin
+exports.getTherapistReport = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+
+        const matchStage = {
+            therapistId: { $ne: null },
+            status: 'Completed',
+            paymentStatus: 'Paid' // Only count paid sales for earnings
+        };
+
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            matchStage.createdAt = { $gte: start, $lte: end };
+        }
+
+        const report = await Sale.aggregate([
+            { $match: matchStage },
+            { $unwind: '$items' }, // Unwind items to access therapistFee per item
+            { $group: {
+                _id: '$therapistId',
+                saleIds: { $addToSet: '$_id' }, // Collect unique sale IDs
+                totalEarnings: { $sum: '$items.therapistFee' } // Sum therapistFee from items
+            }},
+            { $lookup: { // Join with therapists collection
+                from: 'therapists',
+                localField: '_id',
+                foreignField: '_id',
+                as: 'therapistInfo'
+            }},
+            { $unwind: '$therapistInfo' }, // Deconstruct the therapistInfo array
+            { $project: { // Shape the final output
+                _id: 0,
+                therapistId: '$_id',
+                name: '$therapistInfo.name',
+                transactionCount: { $size: '$saleIds' }, // Get the count of unique sale IDs
+                totalEarnings: '$totalEarnings'
+            }},
+            { $sort: { totalEarnings: -1 } }, // Sort by earnings descending
+            { $limit: 10 } // Limit to top 10
+        ]);
+
+        res.json(report);
+    } catch (error) {
+        console.error(`Therapist Report Error: ${error.message}`);
+        res.status(500).json({ message: `Server Error: ${error.message}` });
+    }
 };
