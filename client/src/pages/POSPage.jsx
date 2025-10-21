@@ -1,3 +1,4 @@
+// client/src/pages/POSPage.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
@@ -50,6 +51,8 @@ const POSPage = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [customerSearch, setCustomerSearch] = useState('');
     const [products, setProducts] = useState([]);
+    const [categories, setCategories] = useState([]); // <-- State for categories
+    const [selectedCategoryId, setSelectedCategoryId] = useState('all'); // <-- State for selected category tab
     const [loading, setLoading] = useState(true);
     const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
     const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
@@ -95,16 +98,18 @@ const POSPage = () => {
     const fetchInitialData = useCallback(async () => {
         setLoading(true);
         try {
-            const [productsRes, customersRes, vouchersRes, therapistsRes] = await Promise.all([
+            const [productsRes, customersRes, vouchersRes, therapistsRes, categoriesRes] = await Promise.all([ // <-- Fetch categories
                 api.get('/products'),
                 api.get('/customers'),
                 api.get('/vouchers/active'),
-                api.get('/therapists/active')
+                api.get('/therapists/active'),
+                api.get('/categories') // <-- Fetch categories
             ]);
             setProducts(productsRes.data);
             setCustomers(customersRes.data);
             setVouchers(vouchersRes.data);
             setTherapists(therapistsRes.data);
+            setCategories(categoriesRes.data); // <-- Set categories state
         } catch (error) {
             console.error("Failed to fetch initial data", error);
             showToast('Error fetching page data', 'error');
@@ -126,6 +131,7 @@ const POSPage = () => {
         setIncludeTherapist(true);
         setSearchTerm('');
         setCustomerSearch('');
+        setSelectedCategoryId('all'); // <-- Reset category tab
         setAdditionalFee({ amount: 0, description: 'Biaya Tambahan', includeOnInvoice: true });
         setTransportationFee({ amount: 0, includeOnInvoice: true });
     }
@@ -202,8 +208,8 @@ const POSPage = () => {
             showToast('Cart is empty', 'error');
             return;
         }
-        if (!selectedTherapist) {
-            showToast('Please select a therapist.', 'error');
+        if (includeTherapist && !selectedTherapist) { // Only require therapist if checkbox is checked
+            showToast('Please select a therapist or uncheck "Include therapist on invoice".', 'error');
             return;
         }
         setIsConfirmOrderOpen(true);
@@ -221,7 +227,7 @@ const POSPage = () => {
             totalAmount,
             paymentStatus: 'Unpaid',
             customerId: selectedCustomer ? selectedCustomer._id : null,
-            therapistId: selectedTherapist ? selectedTherapist._id : null,
+            therapistId: includeTherapist && selectedTherapist ? selectedTherapist._id : null, // Only include if checked
             includeTherapistOnInvoice: includeTherapist,
         };
         try {
@@ -268,7 +274,7 @@ const POSPage = () => {
                 paymentMethod,
                 paymentStatus: 'Paid',
                 customerId: selectedCustomer ? selectedCustomer._id : null,
-                therapistId: selectedTherapist ? selectedTherapist._id : null,
+                therapistId: includeTherapist && selectedTherapist ? selectedTherapist._id : null, // Only include if checked
                 includeTherapistOnInvoice: includeTherapist,
             };
             try {
@@ -334,10 +340,14 @@ const POSPage = () => {
         }
     };
 
-    const filteredProducts = products.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const filteredProducts = useMemo(() => {
+        return products.filter(p => {
+            const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                  (p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()));
+            const matchesCategory = selectedCategoryId === 'all' || p.category?._id === selectedCategoryId;
+            return matchesSearch && matchesCategory;
+        });
+    }, [products, searchTerm, selectedCategoryId]); // <-- Filter by category and search
 
     const filteredCustomers = customers.filter(c =>
         c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
@@ -359,6 +369,25 @@ const POSPage = () => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
+                    {/* Category Tabs */}
+                    <div className="flex space-x-2 mb-4 overflow-x-auto pb-2">
+                         <button
+                            onClick={() => setSelectedCategoryId('all')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${selectedCategoryId === 'all' ? 'bg-sky-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                         >
+                            All
+                         </button>
+                         {categories.map(cat => (
+                            <button
+                                key={cat._id}
+                                onClick={() => setSelectedCategoryId(cat._id)}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${selectedCategoryId === cat._id ? 'bg-sky-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                            >
+                                {cat.name}
+                            </button>
+                         ))}
+                    </div>
+                    {/* End Category Tabs */}
                     <div className="flex-grow overflow-y-auto bg-white p-4 rounded-lg shadow-sm">
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                             {filteredProducts.map(product => (
@@ -369,11 +398,16 @@ const POSPage = () => {
                                 </div>
                             ))}
                         </div>
+                         {filteredProducts.length === 0 && (
+                            <p className="text-center text-gray-500 mt-8">No products found matching your search or selected category.</p>
+                         )}
                     </div>
                 </div>
 
+                 {/* Cart Section */}
                 <div className="lg:w-1/3 bg-white p-4 rounded-lg shadow-sm flex flex-col">
-                    <div className="border-b pb-4 mb-4">
+                     {/* Customer Section */}
+                     <div className="border-b pb-4 mb-4">
                         <div className="flex justify-between items-center mb-2">
                              <h2 className="text-xl font-bold">Customer</h2>
                              <Link to="/admin/customers" className="text-sm text-sky-600 hover:underline">
@@ -420,7 +454,8 @@ const POSPage = () => {
                         )}
                     </div>
 
-                    <div className="border-b pb-4 mb-4">
+                    {/* Therapist Section */}
+                     <div className="border-b pb-4 mb-4">
                         <h2 className="text-xl font-bold mb-2">Therapist</h2>
                         <div className="flex gap-2 items-center">
                             <select
@@ -453,6 +488,7 @@ const POSPage = () => {
                         </div>
                     </div>
 
+                    {/* Order Items */}
                     <h2 className="text-xl font-bold border-b pb-2 mb-4">Current Order</h2>
                     <div className="flex-grow overflow-y-auto">
                         {cart.length === 0 ? (
@@ -497,7 +533,10 @@ const POSPage = () => {
                             </ul>
                         )}
                     </div>
+
+                    {/* Order Summary & Actions */}
                     <div className="border-t pt-4 mt-4">
+                        {/* Vouchers */}
                         <div className="mb-4">
                              <label htmlFor="voucher" className="block text-sm font-medium text-gray-700 mb-1">Voucher/Discount</label>
                              <select
@@ -519,7 +558,7 @@ const POSPage = () => {
                              </select>
                         </div>
 
-                         {/* Manual Fees Section */}
+                        {/* Manual Fees */}
                         <div className="space-y-3 text-sm mb-4">
                             <div className="flex items-center gap-2">
                                 <input
@@ -568,7 +607,7 @@ const POSPage = () => {
                             </label>
                         </div>
 
-
+                        {/* Totals */}
                         <div className="space-y-2 text-sm">
                              <div className="flex justify-between">
                                 <span>Subtotal</span>
@@ -598,6 +637,7 @@ const POSPage = () => {
                             </div>
                         </div>
 
+                        {/* Place Order Button */}
                         <button
                             onClick={handlePlaceOrder}
                             disabled={cart.length === 0}
@@ -606,6 +646,8 @@ const POSPage = () => {
                             Place Order
                         </button>
                     </div>
+
+                    {/* Today's Sales Summary */}
                     <div className="border-t pt-4 mt-4">
                         <h3 className="text-lg font-bold mb-2">Today's Sales</h3>
                         {loadingSales ? <p>Loading sales...</p> : (
@@ -647,6 +689,7 @@ const POSPage = () => {
                 </div>
             </div>
 
+            {/* Modals */}
             {isConfirmOrderOpen && (
                  <ConfirmationModal
                     isOpen={isConfirmOrderOpen}
@@ -710,4 +753,4 @@ const POSPage = () => {
     );
 };
 
-export default POSPage; 
+export default POSPage;
