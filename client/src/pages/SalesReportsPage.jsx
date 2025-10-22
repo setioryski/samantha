@@ -234,90 +234,92 @@ const SalesReportsPage = () => {
                     {/* <button onClick={fetchData} className="bg-blue-500 text-white p-2 rounded-md">Apply Filters</button> */}
                 </div>
 
-
-                <div className="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                            <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cashier</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Therapist</th> {/* <-- Added Therapist Header */}
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items Sold</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Method</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Status</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {sales.map(sale => (
-                                <tr key={sale._id} className={sale.status === 'Retracted' ? 'bg-red-50' : ''}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(sale.createdAt).toLocaleString()}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.cashierId.username}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.customerId?.name || 'N/A'}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.therapistId?.name || 'N/A'}</td> {/* <-- Display Therapist Name */}
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        <ul className="list-disc list-inside">
-                                            {sale.items.map(item => (
-                                                // Ensure a unique key if _id isn't always present on items from old data
-                                                <li key={item._id || `${item.productId}-${item.name}`}>{item.quantity}x {item.name}</li>
-                                            ))}
-                                        </ul>
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Rp{sale.totalAmount.toLocaleString('id-ID')}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.paymentMethod}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getPaymentStatusBadge(sale.paymentStatus)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getStatusBadge(sale.status)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
-                                         {/* Pay button only if Unpaid and Completed */}
-                                        {sale.paymentStatus === 'Unpaid' && sale.status === 'Completed' && (
-                                            <button
-                                                onClick={() => handlePayClick(sale)}
-                                                className="text-green-600 hover:text-green-900"
-                                            >
-                                                Pay
-                                            </button>
-                                        )}
-                                        {/* Invoice button always available */}
-                                        <button
-                                            onClick={() => handlePrintClick(sale._id)}
-                                            className="text-indigo-600 hover:text-indigo-900"
-                                        >
-                                            Invoice
-                                        </button>
-                                        {/* Retract button only if Completed */}
-                                        {sale.status === 'Completed' ? (
-                                        <button
-                                            onClick={() => handleRetractClick(sale._id)}
-                                            className="text-red-600 hover:text-red-900"
-                                        >
-                                            Retract
-                                        </button>
-                                        /* Delete button only if Retracted */
-                                        ) : sale.status === 'Retracted' ? (
-                                        <button
-                                            onClick={() => handleDeleteClick(sale._id)}
-                                            className="text-red-600 hover:text-red-900"
-                                        >
-                                            Delete
-                                        </button>
-                                        ) : null} {/* Render nothing if status is neither */}
-                                    </td>
-                                </tr>
-                            ))}
-                             {/* Display message if no sales match filters */}
-                            {sales.length === 0 && !loading && (
+                {/* **MODIFIED**: Added wrapper div for horizontal scrolling */}
+                <div className="overflow-x-auto">
+                    <div className="bg-white p-6 rounded-lg shadow-md min-w-[1000px]"> {/* **MODIFIED**: Removed overflow-x-auto, added min-w for wider tables */}
+                        <table className="w-full divide-y divide-gray-200"> {/* **MODIFIED**: Changed min-w-full to w-full */}
+                            <thead className="bg-gray-50">
                                 <tr>
-                                    <td colSpan="10" className="text-center py-4 text-gray-500">
-                                        No sales found matching the criteria.
-                                    </td>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cashier</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Therapist</th> {/* <-- Added Therapist Header */}
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items Sold</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Method</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Status</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {sales.map(sale => (
+                                    <tr key={sale._id} className={sale.status === 'Retracted' ? 'bg-red-50' : ''}>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(sale.createdAt).toLocaleString()}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.cashierId.username}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.customerId?.name || 'N/A'}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.therapistId?.name || 'N/A'}</td> {/* <-- Display Therapist Name */}
+                                        <td className="px-6 py-4 whitespace-normal text-sm text-gray-500"> {/* Changed whitespace-nowrap to whitespace-normal */}
+                                            <ul className="list-disc list-inside">
+                                                {sale.items.map(item => (
+                                                    // Ensure a unique key if _id isn't always present on items from old data
+                                                    <li key={item._id || `${item.productId}-${item.name}`}>{item.quantity}x {item.name}</li>
+                                                ))}
+                                            </ul>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Rp{sale.totalAmount.toLocaleString('id-ID')}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{sale.paymentMethod}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getPaymentStatusBadge(sale.paymentStatus)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{getStatusBadge(sale.status)}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-4">
+                                             {/* Pay button only if Unpaid and Completed */}
+                                            {sale.paymentStatus === 'Unpaid' && sale.status === 'Completed' && (
+                                                <button
+                                                    onClick={() => handlePayClick(sale)}
+                                                    className="text-green-600 hover:text-green-900"
+                                                >
+                                                    Pay
+                                                </button>
+                                            )}
+                                            {/* Invoice button always available */}
+                                            <button
+                                                onClick={() => handlePrintClick(sale._id)}
+                                                className="text-indigo-600 hover:text-indigo-900"
+                                            >
+                                                Invoice
+                                            </button>
+                                            {/* Retract button only if Completed */}
+                                            {sale.status === 'Completed' ? (
+                                            <button
+                                                onClick={() => handleRetractClick(sale._id)}
+                                                className="text-red-600 hover:text-red-900"
+                                            >
+                                                Retract
+                                            </button>
+                                            /* Delete button only if Retracted */
+                                            ) : sale.status === 'Retracted' ? (
+                                            <button
+                                                onClick={() => handleDeleteClick(sale._id)}
+                                                className="text-red-600 hover:text-red-900"
+                                            >
+                                                Delete
+                                            </button>
+                                            ) : null} {/* Render nothing if status is neither */}
+                                        </td>
+                                    </tr>
+                                ))}
+                                 {/* Display message if no sales match filters */}
+                                {sales.length === 0 && !loading && (
+                                    <tr>
+                                        <td colSpan="10" className="text-center py-4 text-gray-500">
+                                            No sales found matching the criteria.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div> {/* **MODIFIED**: Closing the wrapper div */}
             </div>
 
             {/* Invoice Modal */}
