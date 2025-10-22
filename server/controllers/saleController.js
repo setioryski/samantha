@@ -306,6 +306,7 @@ exports.updateSaleToPaid = async (req, res) => {
 // @route   PUT /api/sales/:id/retract
 // @access  Private/Admin
 exports.retractSale = async (req, res) => {
+    // Populate therapistId to check if a fee might have been generated
     const sale = await Sale.findById(req.params.id).populate('therapistId');
 
     if (!sale) {
@@ -324,31 +325,40 @@ exports.retractSale = async (req, res) => {
             // Ensure productId is accessed correctly, might be populated
             const productId = item.productId._id ? item.productId._id : item.productId;
             await Product.findByIdAndUpdate(productId, {
-                $inc: { stock: +item.quantity }
+                $inc: { stock: +item.quantity } // Note the '+' sign
             }, { session });
         }
 
-        // If the sale was paid, retract any associated expenses
+        // If the sale was paid, delete any associated expenses
         if (sale.paymentStatus === 'Paid') {
-            // Retract therapist fee
+            // Delete therapist fee expense if therapistId exists
             if (sale.therapistId) {
+                // Construct the description string used when creating the expense
+                const therapistDesc = `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`;
                 await Expense.deleteOne({
-                    description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`
+                    description: therapistDesc,
+                    category: 'Therapist Fee' // Add category for specificity
                 }, { session });
             }
-            // Retract transportation fee
+            // Delete transportation fee expense if amount > 0
             if (sale.transportationFee && sale.transportationFee.amount > 0) {
+                 // Construct the description string used when creating the expense
+                 const transportDesc = `Transportation fee for Sale ID: ${sale._id}`;
                  await Expense.deleteOne({
-                    description: `Transportation fee for Sale ID: ${sale._id}`
+                    description: transportDesc,
+                    category: 'Transportation' // Add category for specificity
                 }, { session });
             }
         }
 
-
+        // Update the sale status
         sale.status = 'Retracted';
         const updatedSale = await sale.save({ session });
+
+        // Commit transaction
         await session.commitTransaction();
 
+        // Repopulate necessary fields before sending response
         const populatedSale = await Sale.findById(updatedSale._id)
             .populate('cashierId', 'username')
             .populate('customerId', 'name')
@@ -363,6 +373,7 @@ exports.retractSale = async (req, res) => {
         session.endSession();
     }
 };
+
 
 // @desc    Delete a sale
 // @route   DELETE /api/sales/:id
