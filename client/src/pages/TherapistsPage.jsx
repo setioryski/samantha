@@ -4,7 +4,31 @@ import api from '../services/api';
 import { useToast } from '../context/ToastContext';
 import TherapistModal from '../components/TherapistModal';
 import ConfirmationModal from '../components/ConfirmationModal';
-import TherapistExpenseModal from '../components/TherapistExpenseModal'; // <-- Import the new modal
+import TherapistExpenseModal from '../components/TherapistExpenseModal';
+
+// Helper function to format a date to YYYY-MM-DD string
+const formatDate = (date) => {
+    if (!date) return ''; // Handle null or undefined date
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return ''; // Handle invalid date
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+// Set default dates to the start and end of the current month
+const getInitialDates = () => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const firstDay = new Date(y, m, 1);
+    const lastDay = new Date(y, m + 1, 0);
+    return {
+        firstDay: formatDate(firstDay),
+        lastDay: formatDate(lastDay)
+    };
+};
 
 const TherapistsPage = () => {
     const [therapists, setTherapists] = useState([]);
@@ -14,74 +38,63 @@ const TherapistsPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [selectedTherapist, setSelectedTherapist] = useState(null);
-    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false); // <-- State for expense modal
-    const [therapistForExpenses, setTherapistForExpenses] = useState(null); // <-- Therapist for expense modal
+    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+    const [therapistForExpenses, setTherapistForExpenses] = useState(null);
+
+    // Date filters for Therapist Management section
+    const [mgmtStartDate, setMgmtStartDate] = useState(getInitialDates().firstDay);
+    const [mgmtEndDate, setMgmtEndDate] = useState(getInitialDates().lastDay);
 
     // State for the report
     const [reportData, setReportData] = useState([]);
     const [loadingReport, setLoadingReport] = useState(false);
+    // Use separate date states for the report section to avoid conflicts
+    const [reportStartDate, setReportStartDate] = useState(getInitialDates().firstDay);
+    const [reportEndDate, setReportEndDate] = useState(getInitialDates().lastDay);
 
-    // Helper function to format a date to YYYY-MM-DD string
-    const formatDate = (date) => {
-        const d = new Date(date);
-        const year = d.getFullYear();
-        // getMonth is 0-indexed, so we add 1
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    };
-
-    // Set default dates to the start and end of the current month
-    const getInitialDates = () => {
-        const today = new Date();
-        const y = today.getFullYear();
-        const m = today.getMonth();
-        const firstDay = new Date(y, m, 1);
-        const lastDay = new Date(y, m + 1, 0);
-        return {
-            firstDay: formatDate(firstDay),
-            lastDay: formatDate(lastDay)
-        };
-    };
-
-    const [startDate, setStartDate] = useState(getInitialDates().firstDay);
-    const [endDate, setEndDate] = useState(getInitialDates().lastDay);
 
     const fetchTherapists = useCallback(async () => {
         setLoading(true);
         try {
-            const { data } = await api.get('/therapists');
+            // Build query parameters including dates for the therapist list
+            const params = new URLSearchParams();
+            if (mgmtStartDate) params.append('startDate', mgmtStartDate);
+            if (mgmtEndDate) params.append('endDate', mgmtEndDate);
+
+            const { data } = await api.get(`/therapists?${params.toString()}`);
             setTherapists(data);
         } catch (error) {
             showToast('Failed to load therapists.', 'error');
+            console.error("Fetch Therapists Error:", error);
         } finally {
             setLoading(false);
         }
-    }, [showToast]);
+    // Add mgmt date filters to dependency array
+    }, [showToast, mgmtStartDate, mgmtEndDate]);
 
     const handleGenerateReport = useCallback(async () => {
-        if (!startDate || !endDate) {
-            showToast('Please select both a start and end date.', 'error');
+        if (!reportStartDate || !reportEndDate) { // Use report date states here
+            showToast('Please select both a start and end date for the report.', 'error');
             return;
         }
         setLoadingReport(true);
         try {
-            const { data } = await api.get(`/therapists/report?startDate=${startDate}&endDate=${endDate}`);
+            const { data } = await api.get(`/therapists/report?startDate=${reportStartDate}&endDate=${reportEndDate}`);
             setReportData(data);
         } catch (error) {
             showToast('Failed to generate therapist report.', 'error');
+            console.error("Generate Report Error:", error);
         } finally {
             setLoadingReport(false);
         }
-    }, [startDate, endDate, showToast]);
+    }, [reportStartDate, reportEndDate, showToast]); // Use report date states here
 
     useEffect(() => {
         fetchTherapists();
-        handleGenerateReport();
-        // We disable the lint warning because we intentionally want this to run
-        // only once on mount with the initial dates from the state.
+        handleGenerateReport(); // Initial report generation on mount
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [fetchTherapists]); // fetchTherapists now includes mgmt date dependencies
+
 
     const handleOpenModal = (therapist = null) => {
         setSelectedTherapist(therapist);
@@ -93,7 +106,6 @@ const TherapistsPage = () => {
         setIsConfirmOpen(true);
     };
 
-    // Function to open the expense modal
     const handleOpenExpenseModal = (therapist) => {
         setTherapistForExpenses(therapist);
         setIsExpenseModalOpen(true);
@@ -102,9 +114,9 @@ const TherapistsPage = () => {
     const handleCloseModals = () => {
         setIsModalOpen(false);
         setIsConfirmOpen(false);
-        setIsExpenseModalOpen(false); // <-- Close expense modal too
+        setIsExpenseModalOpen(false);
         setSelectedTherapist(null);
-        setTherapistForExpenses(null); // <-- Clear therapist for expenses
+        setTherapistForExpenses(null);
     };
 
     const handleSaveTherapist = async (therapistData) => {
@@ -116,7 +128,7 @@ const TherapistsPage = () => {
                 await api.post('/therapists', therapistData);
                 showToast('Therapist added successfully!', 'success');
             }
-            fetchTherapists();
+            fetchTherapists(); // Refetch therapists after save
         } catch (error) {
             showToast(error.response?.data?.message || 'Failed to save therapist.', 'error');
         } finally {
@@ -129,9 +141,8 @@ const TherapistsPage = () => {
         try {
             await api.delete(`/therapists/${selectedTherapist._id}`);
             showToast('Therapist deleted successfully!', 'success');
-            fetchTherapists();
+            fetchTherapists(); // Refetch therapists after delete
         } catch (error) {
-            // Check if error message indicates related expenses
             if (error.response?.data?.message.includes('expenses')) {
                  showToast('Cannot delete therapist with associated expenses. Please reassign or delete expenses first.', 'error');
             } else {
@@ -146,30 +157,53 @@ const TherapistsPage = () => {
         try {
             await api.put(`/therapists/${therapist._id}`, { ...therapist, isActive: !therapist.isActive });
             showToast(`Therapist ${!therapist.isActive ? 'activated' : 'deactivated'}.`, 'success');
-            fetchTherapists();
+            fetchTherapists(); // Refetch therapists after toggle
         } catch (error) {
             showToast('Failed to toggle therapist status.', 'error');
         }
     };
 
-    if (loading) return <div>Loading therapists...</div>;
+    // Recalculate therapists list on client side is removed, backend now handles calculation
 
     return (
         <div className="space-y-8">
             {/* Therapist Management Section */}
             <div>
-                <div className="flex justify-between items-center mb-4">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
                     <h1 className="text-2xl font-bold text-gray-800">Therapist Management</h1>
-                    <button onClick={() => handleOpenModal()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                        Add Therapist
-                    </button>
+                     <div className="flex flex-col sm:flex-row items-center gap-4">
+                        {/* Date Filters for Management Table */}
+                         <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <input
+                                type="date"
+                                id="mgmtStartDate"
+                                value={mgmtStartDate}
+                                onChange={(e) => setMgmtStartDate(e.target.value)}
+                                className="p-2 border rounded-md text-sm w-full"
+                            />
+                            <span className="text-gray-500">-</span>
+                            <input
+                                type="date"
+                                id="mgmtEndDate"
+                                value={mgmtEndDate}
+                                onChange={(e) => setMgmtEndDate(e.target.value)}
+                                className="p-2 border rounded-md text-sm w-full"
+                            />
+                        </div>
+                        <button onClick={() => handleOpenModal()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 w-full sm:w-auto">
+                            Add Therapist
+                        </button>
+                    </div>
                 </div>
                 <div className="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
+                   {loading ? <p>Loading therapists...</p> : (
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fee Percentage</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fee %</th>
+                                {/* New Header for Total Expenses */}
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Expenses ({mgmtStartDate} to {mgmtEndDate})</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                             </tr>
@@ -179,44 +213,55 @@ const TherapistsPage = () => {
                                 <tr key={therapist._id}>
                                     <td className="px-6 py-4 whitespace-nowrap">{therapist.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{therapist.feePercentage}%</td>
+                                    {/* Display Total Expenses */}
+                                     <td className="px-6 py-4 whitespace-nowrap text-red-600">
+                                         Rp{(therapist.totalExpensesInRange || 0).toLocaleString('id-ID')}
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-center">
                                         <button onClick={() => handleToggleActive(therapist)} className={`px-2 py-1 text-xs rounded-full ${therapist.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                             {therapist.isActive ? 'Active' : 'Inactive'}
                                         </button>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                                        {/* ADDED: Expenses Button */}
                                         <button onClick={() => handleOpenExpenseModal(therapist)} className="text-green-600 hover:text-green-900">Expenses</button>
                                         <button onClick={() => handleOpenModal(therapist)} className="text-indigo-600 hover:text-indigo-900">Edit</button>
                                         <button onClick={() => handleOpenConfirm(therapist)} className="text-red-600 hover:text-red-900">Delete</button>
                                     </td>
                                 </tr>
                             ))}
+                            {therapists.length === 0 && !loading && (
+                                <tr>
+                                    <td colSpan="6" className="text-center py-4 text-gray-500">
+                                        No therapists found.
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
+                    )}
                 </div>
             </div>
 
             {/* Top 10 Therapists Report Section */}
-            {/* ... (keep report section as is) ... */}
              <div>
                  <h1 className="text-2xl font-bold text-gray-800 mb-4">Top 10 Therapists Report</h1>
                  <div className="bg-white p-6 rounded-lg shadow-md">
                      <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
+                        {/* Use report date states for report filters */}
                         <div className="flex items-center gap-2 w-full sm:w-auto">
                             <input
                                 type="date"
-                                id="startDate"
-                                value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
+                                id="reportStartDate"
+                                value={reportStartDate}
+                                onChange={(e) => setReportStartDate(e.target.value)}
                                 className="p-2 border rounded-md text-sm w-full"
                             />
                             <span className="text-gray-500">-</span>
                             <input
                                 type="date"
-                                id="endDate"
-                                value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
+                                id="reportEndDate"
+                                value={reportEndDate}
+                                onChange={(e) => setReportEndDate(e.target.value)}
                                 className="p-2 border rounded-md text-sm w-full"
                             />
                         </div>
@@ -236,7 +281,7 @@ const TherapistsPage = () => {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Therapist Name</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Transactions</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Earnings</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Earnings (Fees)</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
@@ -264,7 +309,6 @@ const TherapistsPage = () => {
             {/* Modals */}
             {isModalOpen && <TherapistModal therapist={selectedTherapist} onClose={handleCloseModals} onSave={handleSaveTherapist} />}
             {isConfirmOpen && <ConfirmationModal isOpen={isConfirmOpen} onClose={handleCloseModals} onConfirm={handleDeleteTherapist} title="Delete Therapist" message={`Are you sure you want to delete ${selectedTherapist?.name}? This may fail if the therapist has associated sales or expenses.`} />}
-            {/* ADDED: Render Expense Modal */}
             {isExpenseModalOpen && therapistForExpenses && <TherapistExpenseModal therapist={therapistForExpenses} onClose={handleCloseModals} />}
         </div>
     );

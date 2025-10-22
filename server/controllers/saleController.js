@@ -146,15 +146,18 @@ exports.addSale = async (req, res) => {
                 amount: totalTherapistFee,
                 category: 'Therapist Fee',
                 createdBy: req.user._id,
+                therapistId: therapist._id // Link therapist fee expense to therapist
             });
             await expense.save({ session });
         }
+        // MODIFICATION: Link transportation expense to therapist if therapist exists
         if (transportationFee && transportationFee.amount > 0) {
             const transportExpense = new Expense({
                 description: `Transportation fee for Sale ID: ${createdSale._id}`,
                 amount: transportationFee.amount,
                 category: 'Transportation',
                 createdBy: req.user._id,
+                therapistId: therapist ? therapist._id : undefined // Link to therapist if available
             });
             await transportExpense.save({ session });
         }
@@ -265,18 +268,20 @@ exports.updateSaleToPaid = async (req, res) => {
                     amount: totalTherapistFee,
                     category: 'Therapist Fee',
                     createdBy: req.user._id,
+                    therapistId: sale.therapistId._id // Link therapist fee expense to therapist
                 });
                 await expense.save({ session });
             }
         }
 
-        // Create an expense for the transportation fee
+        // Create an expense for the transportation fee, linking to therapist if present
         if (sale.transportationFee && sale.transportationFee.amount > 0) {
             const transportExpense = new Expense({
                 description: `Transportation fee for Sale ID: ${sale._id}`,
                 amount: sale.transportationFee.amount,
                 category: 'Transportation',
                 createdBy: req.user._id,
+                therapistId: sale.therapistId ? sale.therapistId._id : undefined // Link to therapist if available
             });
             await transportExpense.save({ session });
         }
@@ -330,16 +335,19 @@ exports.retractSale = async (req, res) => {
 
         // If the sale was paid, retract any associated expenses
         if (sale.paymentStatus === 'Paid') {
-            // Retract therapist fee
+            // Retract therapist fee (linked to therapist)
             if (sale.therapistId) {
                 await Expense.deleteOne({
-                    description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`
+                    description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`,
+                    therapistId: sale.therapistId._id // Ensure we delete the one linked to this therapist
                 }, { session });
             }
-            // Retract transportation fee
+            // Retract transportation fee (potentially linked to therapist)
             if (sale.transportationFee && sale.transportationFee.amount > 0) {
                  await Expense.deleteOne({
-                    description: `Transportation fee for Sale ID: ${sale._id}`
+                    description: `Transportation fee for Sale ID: ${sale._id}`,
+                    // therapistId might be null or the therapist's ID, this covers both cases
+                    therapistId: sale.therapistId ? sale.therapistId._id : null
                 }, { session });
             }
         }

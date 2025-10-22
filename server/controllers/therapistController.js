@@ -1,5 +1,7 @@
+// server/controllers/therapistController.js
 const Therapist = require('../models/Therapist');
 const Sale = require('../models/Sale');
+const Expense = require('../models/Expense'); // Import Expense model
 
 // @desc    Get therapist performance report
 // @route   GET /api/therapists/report
@@ -49,19 +51,72 @@ exports.getTherapistReport = async (req, res) => {
 
         res.json(report);
     } catch (error) {
+        console.error(`Therapist Report Error: ${error.message}`);
         res.status(500).json({ message: `Server Error: ${error.message}` });
     }
 };
 
 
-// @desc    Get all therapists
+// @desc    Get all therapists with their expenses in a date range
 // @route   GET /api/therapists
 // @access  Private/Admin
 exports.getTherapists = async (req, res) => {
     try {
-        const therapists = await Therapist.find({}).sort({ name: 1 });
+        const { startDate, endDate } = req.query;
+
+        // Base pipeline to get therapists
+        const pipeline = [
+            { $sort: { name: 1 } },
+        ];
+
+        // If date range is provided, add stages to lookup and calculate expenses
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+
+            pipeline.push(
+                {
+                    $lookup: {
+                        from: 'expenses', // The collection name for Expense model
+                        let: { therapistId: '$_id' },
+                        pipeline: [
+                            {
+                                $match: {
+                                    $expr: { $eq: ['$therapistId', '$$therapistId'] },
+                                    date: { $gte: start, $lte: end } // Filter expenses by date
+                                }
+                            }
+                        ],
+                        as: 'expensesInRange'
+                    }
+                },
+                {
+                    $addFields: {
+                        totalExpensesInRange: { $sum: '$expensesInRange.amount' }
+                    }
+                },
+                {
+                    $project: { // Remove the temporary expensesInRange field if not needed
+                        expensesInRange: 0
+                    }
+                }
+            );
+        } else {
+             // If no date range, set totalExpensesInRange to 0 or null
+             pipeline.push({
+                 $addFields: {
+                     totalExpensesInRange: 0 // Or null, depending on how you want to handle it
+                 }
+             });
+        }
+
+
+        const therapists = await Therapist.aggregate(pipeline);
         res.json(therapists);
     } catch (error) {
+        console.error(`Get Therapists Error: ${error.message}`);
         res.status(500).json({ message: `Server Error: ${error.message}` });
     }
 };
@@ -121,6 +176,12 @@ exports.updateTherapist = async (req, res) => {
 // @access  Private/Admin
 exports.deleteTherapist = async (req, res) => {
     try {
+        // Find expenses linked to the therapist
+        const relatedExpenses = await Expense.find({ therapistId: req.params.id });
+        if (relatedExpenses.length > 0) {
+            return res.status(400).json({ message: 'Cannot delete therapist with associated expenses. Please reassign or delete expenses first.' });
+        }
+
         const therapist = await Therapist.findById(req.params.id);
         if (therapist) {
             await therapist.deleteOne();
@@ -129,6 +190,7 @@ exports.deleteTherapist = async (req, res) => {
             res.status(404).json({ message: 'Therapist not found' });
         }
     } catch (error) {
+         console.error(`Delete Therapist Error: ${error.message}`); // Log the error
         res.status(500).json({ message: `Server Error: ${error.message}` });
     }
 };
