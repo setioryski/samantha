@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useToast } from '../context/ToastContext';
 import ConfirmationModal from '../components/ConfirmationModal';
+import ExpenseModal from '../components/ExpenseModal'; // Import the new modal
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
@@ -13,18 +14,14 @@ const AccountingPage = () => {
     const [exporting, setExporting] = useState(false);
     const { showToast } = useToast();
 
-    // Form state for new expense
-    const [description, setDescription] = useState('');
-    const [amount, setAmount] = useState('');
-    const [category, setCategory] = useState('');
-
+    // Modal states
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
     const [expenseToDeleteId, setExpenseToDeleteId] = useState(null);
+    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false); // State for the new expense modal
 
     // State for date filtering
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    // State for category filtering (optional, can be added later)
     // const [filterCategory, setFilterCategory] = useState('');
 
     const fetchData = useCallback(async () => {
@@ -34,52 +31,39 @@ const AccountingPage = () => {
             const expenseParams = new URLSearchParams();
             if (startDate) expenseParams.append('startDate', startDate);
             if (endDate) expenseParams.append('endDate', endDate);
-            // if (filterCategory) expenseParams.append('category', filterCategory); // Uncomment to add category filter
+            // if (filterCategory) expenseParams.append('category', filterCategory);
 
             // Build query parameters for sales based on filters
             const saleParams = new URLSearchParams();
             if (startDate) saleParams.append('startDate', startDate);
             if (endDate) saleParams.append('endDate', endDate);
-            // Add other relevant sales filters if needed (e.g., paymentStatus='Paid')
             saleParams.append('paymentStatus', 'Paid');
             saleParams.append('status', 'Completed');
 
-
             const [expensesRes, salesRes] = await Promise.all([
                 api.get(`/expenses?${expenseParams.toString()}`),
-                api.get(`/sales?${saleParams.toString()}`) // Fetch only completed, paid sales matching date range
+                api.get(`/sales?${saleParams.toString()}`)
             ]);
             setExpenses(expensesRes.data);
-            setSales(salesRes.data); // Already filtered by backend
+            setSales(salesRes.data);
         } catch (error) {
             console.error("Failed to fetch accounting data", error);
             showToast('Failed to load accounting data.', 'error');
         } finally {
             setLoading(false);
         }
-    // Update dependencies to refetch when filters change
     }, [showToast, startDate, endDate /*, filterCategory*/]);
 
     useEffect(() => {
         fetchData();
-    }, [fetchData]); // fetchData now includes filter dependencies
+    }, [fetchData]);
 
-    const handleAddExpense = async (e) => {
-        e.preventDefault();
-        if (!description || !amount || !category) {
-            showToast('Please fill in all fields.', 'error');
-            return;
-        }
+    const handleSaveExpense = async (expenseData) => {
         try {
-            // Note: Adding expense here won't link to a therapist unless you add a therapist selector
-            const newExpense = { description, amount: Number(amount), category };
-            await api.post('/expenses', newExpense);
+            await api.post('/expenses', expenseData);
             showToast('Expense added successfully!', 'success');
-            // Reset form and refresh list
-            setDescription('');
-            setAmount('');
-            setCategory('');
-            fetchData(); // Refresh data including new expense
+            setIsExpenseModalOpen(false);
+            fetchData();
         } catch (error) {
             console.error("Failed to add expense", error);
             showToast(error.response?.data?.message || 'Failed to add expense.', 'error');
@@ -96,10 +80,9 @@ const AccountingPage = () => {
         try {
             await api.delete(`/expenses/${expenseToDeleteId}`);
             showToast('Expense deleted successfully!', 'success');
-            fetchData(); // Refresh the data
+            fetchData();
         } catch (error) {
             console.error("Failed to delete expense", error);
-             // Check specific error message from backend
             if (error.response?.status === 400 && error.response?.data?.message) {
                  showToast(error.response.data.message, 'error');
             } else {
@@ -111,7 +94,6 @@ const AccountingPage = () => {
         }
     };
 
-    // Corrected Calculations only use state variables (filteredSales === sales now)
     const totalRevenue = sales.reduce((acc, sale) => acc + sale.totalAmount, 0);
     const totalCOGS = sales.reduce((acc, sale) =>
         acc + sale.items.reduce((itemAcc, item) => itemAcc + ((item.basePrice || 0) * item.quantity), 0),
@@ -120,58 +102,85 @@ const AccountingPage = () => {
     const totalExpenses = expenses.reduce((acc, expense) => acc + expense.amount, 0);
     const netIncome = grossProfit - totalExpenses;
 
-
+    // --- ADJUSTED handleExport ---
     const handleExport = () => {
         setExporting(true);
-
-        // Use a timeout to allow the UI to update to "Exporting..."
         setTimeout(() => {
             try {
                 const wb = XLSX.utils.book_new();
 
-                // Summary Sheet
+                // Summary Sheet - Export numbers directly
                 const summaryData = [
                     ["Financial Summary", ""],
                     ["Date Range", `${startDate || 'Start'} to ${endDate || 'End'}`],
                     ["", ""], // Spacer
-                    ["Total Revenue (Paid Sales)", totalRevenue],
-                    ["Cost of Goods Sold (COGS)", totalCOGS],
-                    ["Gross Profit", grossProfit],
-                    ["Total Expenses", totalExpenses],
-                    ["Net Income", netIncome],
+                    ["Total Revenue (Paid Sales)", totalRevenue], // Number
+                    ["Cost of Goods Sold (COGS)", totalCOGS],      // Number
+                    ["Gross Profit", grossProfit],                // Number
+                    ["Total Expenses", totalExpenses],            // Number
+                    ["Net Income", netIncome],                    // Number
                 ];
                 const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
-                // Adjust column widths for Summary
-                 summaryWs['!cols'] = [{ wch: 25 }, { wch: 20 }];
+                 // Apply number format to currency cells in Summary
+                summaryWs['B4'].t = 'n'; // Total Revenue
+                summaryWs['B4'].z = '"Rp"#,##0';
+                summaryWs['B5'].t = 'n'; // COGS
+                summaryWs['B5'].z = '"Rp"#,##0';
+                summaryWs['B6'].t = 'n'; // Gross Profit
+                summaryWs['B6'].z = '"Rp"#,##0';
+                summaryWs['B7'].t = 'n'; // Total Expenses
+                summaryWs['B7'].z = '"Rp"#,##0';
+                summaryWs['B8'].t = 'n'; // Net Income
+                summaryWs['B8'].z = '"Rp"#,##0';
+                summaryWs['!cols'] = [{ wch: 25 }, { wch: 20 }];
                 XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
 
-                // Sales Sheet (Already filtered paid/completed sales)
+                // Sales Sheet - Export Date objects and numbers
                 const salesData = sales.map(sale => ({
-                    Date: new Date(sale.createdAt).toLocaleString('id-ID'),
+                    Date: new Date(sale.createdAt), // Date object
                     Cashier: sale.cashierId.username,
                     Customer: sale.customerId?.name || 'Walk-in',
                     Therapist: sale.therapistId?.name || 'N/A',
                     Items: sale.items.map(i => `${i.quantity}x ${i.name}`).join(', '),
-                    Amount: sale.totalAmount,
+                    Amount: sale.totalAmount, // Number
                     PaymentMethod: sale.paymentMethod,
                 }));
-                const salesWs = XLSX.utils.json_to_sheet(salesData);
-                 // Adjust column widths for Sales
+                const salesWs = XLSX.utils.json_to_sheet(salesData, { cellDates: true }); // Use cellDates: true
                  salesWs['!cols'] = [ { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 40 }, { wch: 15 }, { wch: 15 }];
+                 // Apply currency format to Amount column (assuming it's column F, index 5)
+                 // Need to iterate through rows if json_to_sheet doesn't apply format automatically
+                const range = XLSX.utils.decode_range(salesWs['!ref']);
+                for (let R = range.s.r + 1; R <= range.e.r; ++R) { // Start from row 1 (0 is header)
+                    const cell_address = { c: 5, r: R }; // Column F
+                    const cell_ref = XLSX.utils.encode_cell(cell_address);
+                    if(salesWs[cell_ref]) {
+                        salesWs[cell_ref].t = 'n';
+                        salesWs[cell_ref].z = '"Rp"#,##0';
+                    }
+                }
                 XLSX.utils.book_append_sheet(wb, salesWs, "Income from Sales");
 
-                // Expenses Sheet (using filtered expenses)
+                // Expenses Sheet - Export Date objects and numbers
                 const expensesData = expenses.map(exp => ({
-                    Date: new Date(exp.date).toLocaleDateString('id-ID'),
+                    Date: new Date(exp.date), // Date object
                     Description: exp.description,
                     Category: exp.category,
-                    Therapist: exp.therapistId?.name || '', // Add Therapist Name
-                    Amount: exp.amount,
+                    Therapist: exp.therapistId?.name || '',
+                    Amount: exp.amount, // Number
                     EnteredBy: exp.createdBy?.username || 'N/A'
                 }));
-                const expensesWs = XLSX.utils.json_to_sheet(expensesData);
-                 // Adjust column widths for Expenses
+                const expensesWs = XLSX.utils.json_to_sheet(expensesData, { cellDates: true }); // Use cellDates: true
                  expensesWs['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
+                 // Apply currency format to Amount column (assuming it's column E, index 4)
+                const expRange = XLSX.utils.decode_range(expensesWs['!ref']);
+                for (let R = expRange.s.r + 1; R <= expRange.e.r; ++R) { // Start from row 1
+                    const cell_address = { c: 4, r: R }; // Column E
+                    const cell_ref = XLSX.utils.encode_cell(cell_address);
+                    if(expensesWs[cell_ref]) {
+                        expensesWs[cell_ref].t = 'n';
+                        expensesWs[cell_ref].z = '"Rp"#,##0';
+                    }
+                }
                 XLSX.utils.book_append_sheet(wb, expensesWs, "Expenses");
 
                 const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
@@ -184,9 +193,9 @@ const AccountingPage = () => {
             } finally {
                 setExporting(false);
             }
-        }, 100); // Short delay for UI update
+        }, 100);
     };
-
+    // --- END ADJUSTED handleExport ---
 
     if (loading) return <div>Loading accounting data...</div>;
 
@@ -195,28 +204,20 @@ const AccountingPage = () => {
             <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 gap-4">
               <h1 className="text-2xl font-bold text-gray-800">Accounting</h1>
               <div className="flex flex-col sm:flex-row items-center gap-4">
+                {/* Date Filters */}
                 <div className="flex items-center gap-2">
-                    <input
-                        type="date"
-                        id="startDate"
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="p-2 border rounded-md text-sm"
-                    />
+                    <input type="date" id="startDate" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="p-2 border rounded-md text-sm"/>
                     <span className="text-gray-500">-</span>
-                    <input
-                        type="date"
-                        id="endDate"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="p-2 border rounded-md text-sm"
-                    />
+                    <input type="date" id="endDate" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="p-2 border rounded-md text-sm"/>
                 </div>
-                 {/* Optional: Add Category Filter Dropdown if needed */}
-                {/* <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="p-2 border rounded-md text-sm">
-                    <option value="">All Categories</option>
-                    {[...new Set(expenses.map(e => e.category))].sort().map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select> */}
+                {/* Add Expense Button */}
+                <button
+                    onClick={() => setIsExpenseModalOpen(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 w-full sm:w-auto"
+                >
+                    Add Manual Expense
+                </button>
+                {/* Export Button */}
                 <button
                   onClick={handleExport}
                   disabled={exporting}
@@ -247,27 +248,28 @@ const AccountingPage = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Income (Sales List) */}
-                <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-md">
+             {/* Layout: Income Table then Expense Table */}
+             <div className="space-y-8">
+                 {/* Income (Sales List) */}
+                <div className="bg-white p-6 rounded-lg shadow-md">
                     <h2 className="text-lg font-semibold mb-4">Income from Sales (Paid & Completed)</h2>
                     <div className="overflow-x-auto max-h-[60vh]">
                         <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50 sticky top-0">
+                             <thead className="bg-gray-50 sticky top-0">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Therapist</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Therapist</th>
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                             <tbody className="bg-white divide-y divide-gray-200">
                                 {sales.map(sale => (
                                     <tr key={sale._id}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">{new Date(sale.createdAt).toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 whitespace-normal text-sm">{sale.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm">{sale.therapistId?.name || 'N/A'}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">Rp{sale.totalAmount.toLocaleString('id-ID')}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm">{new Date(sale.createdAt).toLocaleDateString()}</td>
+                                        <td className="px-4 py-4 whitespace-normal text-sm">{sale.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm">{sale.therapistId?.name || 'N/A'}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-right text-green-600 font-semibold">Rp{sale.totalAmount.toLocaleString('id-ID')}</td>
                                     </tr>
                                 ))}
                                 {sales.length === 0 && (
@@ -278,107 +280,60 @@ const AccountingPage = () => {
                     </div>
                 </div>
 
-                {/* Expenses Section */}
-                <div className="lg:col-span-1 space-y-8">
-                    {/* Add Expense Form */}
-                    <div className="bg-white p-6 rounded-lg shadow-md h-fit">
-                        <h2 className="text-lg font-semibold mb-4">Add Manual Expense</h2>
-                        <form onSubmit={handleAddExpense} className="space-y-4">
-                            <div>
-                                <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
-                                <input
-                                    type="text"
-                                    id="description"
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    className="mt-1 w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="amount" className="block text-sm font-medium text-gray-700">Amount (Rp)</label>
-                                <input
-                                    type="number"
-                                    id="amount"
-                                    value={amount}
-                                    onChange={(e) => setAmount(e.target.value)}
-                                    className="mt-1 w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                    required
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="category" className="block text-sm font-medium text-gray-700">Category</label>
-                                <input
-                                    type="text"
-                                    id="category"
-                                    value={category}
-                                    onChange={(e) => setCategory(e.target.value)}
-                                    placeholder="e.g., Utilities, Supplies"
-                                    className="mt-1 w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                    required
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700"
-                            >
-                                Add Expense
-                            </button>
-                        </form>
-                    </div>
-
-                    {/* Expenses List */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                        <h2 className="text-lg font-semibold mb-4">Expense History</h2>
-                        <div className="overflow-y-auto max-h-96">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50 sticky top-0">
-                                    <tr>
-                                        {/* ADDED Therapist Column Header */}
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Desc / Therapist</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                 {/* Expenses List */}
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h2 className="text-lg font-semibold mb-4">Expense History</h2>
+                    <div className="overflow-x-auto max-h-[60vh]">
+                        <table className="min-w-full divide-y divide-gray-200">
+                             <thead className="bg-gray-50 sticky top-0">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Therapist</th>
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                             <tbody className="bg-white divide-y divide-gray-200">
+                                {expenses.map(expense => (
+                                    <tr key={expense._id}>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(expense.date).toLocaleDateString()}</td>
+                                        <td className="px-4 py-4 whitespace-normal text-sm text-gray-900">{expense.description}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{expense.category}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-blue-600">{expense.therapistId?.name || ''}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-right text-red-600 font-semibold">Rp{expense.amount.toLocaleString('id-ID')}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            {!(expense.category === 'Therapist Fee' || expense.category === 'Transportation' || expense.category === 'Stock Loss') || !expense.description.includes('Sale ID:') ? (
+                                                <button
+                                                    onClick={() => handleDeleteClick(expense._id)}
+                                                    className="text-red-600 hover:text-red-900"
+                                                >
+                                                    Delete
+                                                </button>
+                                            ) : (
+                                                 <span className="text-xs text-gray-400 italic">Auto</span>
+                                            )}
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {expenses.map(expense => (
-                                        <tr key={expense._id}>
-                                            <td className="px-4 py-4 whitespace-normal">
-                                                <div className="text-sm text-gray-900">{expense.description}</div>
-                                                {/* Display Therapist Name if available */}
-                                                {expense.therapistId?.name && (
-                                                    <div className="text-xs text-blue-600">({expense.therapistId.name})</div>
-                                                )}
-                                            </td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{expense.category}</td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(expense.date).toLocaleDateString()}</td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-sm text-right text-red-600 font-semibold">Rp{expense.amount.toLocaleString('id-ID')}</td>
-                                            <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                {/* Prevent deletion of automatic expenses */}
-                                                {!(expense.category === 'Therapist Fee' || expense.category === 'Transportation' || expense.category === 'Stock Loss') || !expense.description.includes('Sale ID:') ? (
-                                                    <button
-                                                        onClick={() => handleDeleteClick(expense._id)}
-                                                        className="text-red-600 hover:text-red-900"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                ) : (
-                                                     <span className="text-xs text-gray-400 italic">Auto</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {expenses.length === 0 && (
-                                         <tr><td colSpan="5" className="text-center py-4 text-gray-500">No expenses found for this period.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                                ))}
+                                {expenses.length === 0 && (
+                                     <tr><td colSpan="6" className="text-center py-4 text-gray-500">No expenses found for this period.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-            </div>
+             </div>
+
+            {/* Modals */}
+            {isExpenseModalOpen && (
+                <ExpenseModal
+                    onClose={() => setIsExpenseModalOpen(false)}
+                    onSave={handleSaveExpense}
+                />
+            )}
+
             <ConfirmationModal
                 isOpen={isConfirmModalOpen}
                 onClose={() => {
