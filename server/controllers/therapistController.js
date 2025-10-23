@@ -1,7 +1,8 @@
 // server/controllers/therapistController.js
-const Therapist = require('../models/Therapist');
-const Sale = require('../models/Sale');
-const Expense = require('../models/Expense'); // Import Expense model
+const Therapist = require('../models/Therapist'); //
+const Sale = require('../models/Sale'); //
+const Expense = require('../models/Expense'); //
+const mongoose = require('mongoose'); // Import mongoose
 
 // @desc    Get therapist performance report
 // @route   GET /api/therapists/report
@@ -10,43 +11,153 @@ exports.getTherapistReport = async (req, res) => {
     try {
         const { startDate, endDate } = req.query;
 
-        const matchStage = {
-            therapistId: { $ne: null },
-            status: 'Completed',
-            paymentStatus: 'Paid' // Only count paid sales for earnings
-        };
-
-        if (startDate && endDate) {
-            matchStage.createdAt = {
-                $gte: new Date(startDate),
-                $lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
-            };
+        // Ensure dates are provided
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Start date and end date are required for the report.' });
         }
 
-        const report = await Sale.aggregate([
-            { $match: matchStage },
-            { $unwind: '$items' },
-            { $group: {
-                _id: '$therapistId',
-                transactionCount: { $sum: 1 },
-                totalEarnings: { $sum: '$items.therapistFee' }
-            }},
-            { $sort: { totalEarnings: -1 } },
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const dateMatch = { $gte: start, $lte: end };
+
+        const report = await Therapist.aggregate([
+            // Stage 1: Lookup paid sales within the date range
+            {
+                $lookup: {
+                    from: 'sales', //
+                    let: { therapistId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: { $eq: ['$therapistId', '$$therapistId'] },
+                                status: 'Completed', //
+                                paymentStatus: 'Paid', //
+                                createdAt: dateMatch // Apply date range
+                            }
+                        },
+                         // Keep basic sale info + items for fee calculation
+                         {
+                            $project: {
+                                _id: 1,
+                                createdAt: 1,
+                                items: 1, // Keep items array
+                                totalAmount: 1 //
+                            }
+                        }
+                    ],
+                    as: 'paidSales'
+                }
+            },
+
+            // Stage 2: Lookup expenses within the date range
+            {
+                $lookup: {
+                    from: 'expenses', //
+                    let: { therapistId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: { $eq: ['$therapistId', '$$therapistId'] },
+                                date: dateMatch // Apply date range
+                            }
+                        }
+                    ],
+                    as: 'relatedExpenses'
+                }
+            },
+
+            // Stage 3: Unwind sales *after* expense lookup to process fees
+             { $unwind: { path: '$paidSales', preserveNullAndEmptyArrays: true } }, // Keep therapists even if they have 0 sales
+             { $unwind: { path: '$paidSales.items', preserveNullAndEmptyArrays: true } }, // Unwind items to access fee
+
+            // Stage 4: Group back by therapist to calculate totals and collect sale details
+            {
+                $group: {
+                    _id: '$_id', // Group by therapist ID
+                    name: { $first: '$name' }, // Get therapist name
+                    totalFees: { $sum: { $ifNull: ['$paidSales.items.therapistFee', 0] } }, // Sum fees
+                    totalExpenses: { $first: { $sum: '$relatedExpenses.amount' } }, // Sum expenses
+                    // Collect relevant sale details for the modal
+                    contributingSales: {
+                        $addToSet: { // Use $addToSet to avoid duplicates if items were unwound
+                             $cond: { // Only add if paidSales exists
+                                if: "$paidSales._id",
+                                then: {
+                                    saleId: "$paidSales._id",
+                                    date: "$paidSales.createdAt",
+                                    totalAmount: "$paidSales.totalAmount",
+                                    // Calculate fee for this specific sale (summing items again if needed)
+                                    // Note: This adds complexity. Simpler to just show Sale ID/Date/Total
+                                    // For simplicity, we'll rely on frontend to show full invoice later if clicked
+                                },
+                                else: null // Represent no sale contribution explicitly if needed, or omit
+                             }
+                        }
+                    },
+                     // Keep track of unique sale IDs for transaction count
+                    uniqueSaleIds: { $addToSet: "$paidSales._id" }
+                }
+            },
+             // Remove nulls potentially added by $addToSet in the previous step
+             {
+                 $addFields: {
+                    contributingSales: {
+                        $filter: {
+                            input: "$contributingSales",
+                            as: "sale",
+                            cond: { $ne: [ "$$sale", null ] }
+                        }
+                    },
+                    uniqueSaleIds: {
+                         $filter: {
+                             input: "$uniqueSaleIds",
+                             as: "id",
+                             cond: { $ne: [ "$$id", null ] }
+                         }
+                    }
+                 }
+            },
+
+            // Stage 5: Calculate Total Earnings and Transaction Count
+            {
+                $addFields: {
+                   totalEarnings: { $add: ['$totalFees', '$totalExpenses'] }, // Total Earnings = Fees + Expenses
+                   transactionCount: { $size: '$uniqueSaleIds' } // Count based on unique IDs collected
+                }
+            },
+
+            // Stage 6: Filter out therapists with zero activity (optional)
+             {
+                $match: {
+                    $or: [
+                        { totalFees: { $gt: 0 } },
+                        { totalExpenses: { $gt: 0 } }
+                    ]
+                }
+             },
+
+            // Stage 7: Sort by totalEarnings descending
+            { $sort: { totalEarnings: -1 } }, // Sort by the new totalEarnings
+
+            // Stage 8: Limit to top 10 (if needed)
             { $limit: 10 },
-            { $lookup: {
-                from: 'therapists',
-                localField: '_id',
-                foreignField: '_id',
-                as: 'therapist'
-            }},
-            { $unwind: '$therapist' },
-            { $project: {
-                _id: 0,
-                therapistId: '$_id',
-                name: '$therapist.name',
-                transactionCount: '$transactionCount',
-                totalEarnings: '$totalEarnings'
-            }}
+
+             // Stage 9: Final reshape for frontend
+            {
+                $project: {
+                    _id: 0,
+                    therapistId: '$_id',
+                    name: '$name',
+                    transactionCount: '$transactionCount',
+                    totalFees: '$totalFees',
+                    totalExpenses: '$totalExpenses',
+                    totalEarnings: '$totalEarnings',
+                    contributingSales: 1 // Pass the collected sales details
+                }
+            }
         ]);
 
         res.json(report);
@@ -66,7 +177,7 @@ exports.getTherapists = async (req, res) => {
 
         // Base pipeline to get therapists
         const pipeline = [
-            { $sort: { name: 1 } },
+            { $sort: { name: 1 } }, //
         ];
 
         // If date range is provided, add stages to lookup and calculate expenses
@@ -84,7 +195,7 @@ exports.getTherapists = async (req, res) => {
                         pipeline: [
                             {
                                 $match: {
-                                    $expr: { $eq: ['$therapistId', '$$therapistId'] },
+                                    $expr: { $eq: ['$therapistId', '$$therapistId'] }, //
                                     date: { $gte: start, $lte: end } // Filter expenses by date
                                 }
                             }
@@ -94,7 +205,8 @@ exports.getTherapists = async (req, res) => {
                 },
                 {
                     $addFields: {
-                        totalExpensesInRange: { $sum: '$expensesInRange.amount' }
+                        // Calculate sum, ensuring it handles cases with no expenses correctly
+                         totalExpensesInRange: { $ifNull: [ { $sum: '$expensesInRange.amount' }, 0 ] } //
                     }
                 },
                 {
@@ -104,10 +216,10 @@ exports.getTherapists = async (req, res) => {
                 }
             );
         } else {
-             // If no date range, set totalExpensesInRange to 0 or null
+             // If no date range, explicitly set totalExpensesInRange to 0
              pipeline.push({
                  $addFields: {
-                     totalExpensesInRange: 0 // Or null, depending on how you want to handle it
+                     totalExpensesInRange: 0
                  }
              });
         }
@@ -126,7 +238,7 @@ exports.getTherapists = async (req, res) => {
 // @access  Private
 exports.getActiveTherapists = async (req, res) => {
     try {
-        const therapists = await Therapist.find({ isActive: true }).sort({ name: 1 });
+        const therapists = await Therapist.find({ isActive: true }).sort({ name: 1 }); //
         res.json(therapists);
     } catch (error) {
         res.status(500).json({ message: `Server Error: ${error.message}` });
@@ -137,13 +249,13 @@ exports.getActiveTherapists = async (req, res) => {
 // @route   POST /api/therapists
 // @access  Private
 exports.createTherapist = async (req, res) => {
-    const { name, feePercentage } = req.body;
+    const { name, feePercentage } = req.body; //
     try {
-        const therapistExists = await Therapist.findOne({ name });
+        const therapistExists = await Therapist.findOne({ name }); //
         if (therapistExists) {
             return res.status(400).json({ message: 'A therapist with this name already exists' });
         }
-        const therapist = await Therapist.create({ name, feePercentage });
+        const therapist = await Therapist.create({ name, feePercentage }); //
         res.status(201).json(therapist);
     } catch (error) {
         res.status(500).json({ message: `Server Error: ${error.message}` });
@@ -154,13 +266,13 @@ exports.createTherapist = async (req, res) => {
 // @route   PUT /api/therapists/:id
 // @access  Private/Admin
 exports.updateTherapist = async (req, res) => {
-    const { name, isActive, feePercentage } = req.body;
+    const { name, isActive, feePercentage } = req.body; //
     try {
         const therapist = await Therapist.findById(req.params.id);
         if (therapist) {
             therapist.name = name || therapist.name;
             therapist.isActive = isActive !== undefined ? isActive : therapist.isActive;
-            therapist.feePercentage = feePercentage !== undefined ? feePercentage : therapist.feePercentage;
+            therapist.feePercentage = feePercentage !== undefined ? feePercentage : therapist.feePercentage; //
             const updatedTherapist = await therapist.save();
             res.json(updatedTherapist);
         } else {
@@ -177,7 +289,7 @@ exports.updateTherapist = async (req, res) => {
 exports.deleteTherapist = async (req, res) => {
     try {
         // Find expenses linked to the therapist
-        const relatedExpenses = await Expense.find({ therapistId: req.params.id });
+        const relatedExpenses = await Expense.find({ therapistId: req.params.id }); //
         if (relatedExpenses.length > 0) {
             return res.status(400).json({ message: 'Cannot delete therapist with associated expenses. Please reassign or delete expenses first.' });
         }

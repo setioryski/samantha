@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext';
 import TherapistModal from '../components/TherapistModal';
 import ConfirmationModal from '../components/ConfirmationModal';
 import TherapistExpenseModal from '../components/TherapistExpenseModal';
+import TherapistFeeDetailsModal from '../components/TherapistFeeDetailsModal'; // <-- Import the fee details modal
 
 // Helper function to format a date to YYYY-MM-DD string
 const formatDate = (date) => {
@@ -52,6 +53,10 @@ const TherapistsPage = () => {
     const [reportStartDate, setReportStartDate] = useState(getInitialDates().firstDay);
     const [reportEndDate, setReportEndDate] = useState(getInitialDates().lastDay);
 
+    // <-- Add state for the new fee details modal -->
+    const [isFeeDetailsModalOpen, setIsFeeDetailsModalOpen] = useState(false);
+    const [selectedTherapistForFeeDetails, setSelectedTherapistForFeeDetails] = useState(null);
+
 
     const fetchTherapists = useCallback(async () => {
         setLoading(true);
@@ -82,7 +87,7 @@ const TherapistsPage = () => {
             const { data } = await api.get(`/therapists/report?startDate=${reportStartDate}&endDate=${reportEndDate}`);
             setReportData(data);
         } catch (error) {
-            showToast('Failed to generate therapist report.', 'error');
+            showToast(error.response?.data?.message || 'Failed to generate therapist report.', 'error');
             console.error("Generate Report Error:", error);
         } finally {
             setLoadingReport(false);
@@ -91,9 +96,17 @@ const TherapistsPage = () => {
 
     useEffect(() => {
         fetchTherapists();
-        handleGenerateReport(); // Initial report generation on mount
+        // Initial report generation moved to dedicated useEffect below
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fetchTherapists]); // fetchTherapists now includes mgmt date dependencies
+    }, [fetchTherapists]);
+
+    // Re-generate report when dates change
+     useEffect(() => {
+        if (reportStartDate && reportEndDate) {
+            handleGenerateReport();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reportStartDate, reportEndDate]); // Rerun report when dates change
 
 
     const handleOpenModal = (therapist = null) => {
@@ -111,13 +124,23 @@ const TherapistsPage = () => {
         setIsExpenseModalOpen(true);
     };
 
+    // <-- Modify handleCloseModals -->
     const handleCloseModals = () => {
         setIsModalOpen(false);
         setIsConfirmOpen(false);
         setIsExpenseModalOpen(false);
+        setIsFeeDetailsModalOpen(false); // <-- Close the new modal
         setSelectedTherapist(null);
         setTherapistForExpenses(null);
+        setSelectedTherapistForFeeDetails(null); // <-- Reset selected therapist for details
     };
+
+    // <-- Add handler to open the fee details modal -->
+    const handleOpenFeeDetailsModal = (therapistReportData) => {
+        setSelectedTherapistForFeeDetails(therapistReportData);
+        setIsFeeDetailsModalOpen(true);
+    };
+
 
     const handleSaveTherapist = async (therapistData) => {
         try {
@@ -129,6 +152,8 @@ const TherapistsPage = () => {
                 showToast('Therapist added successfully!', 'success');
             }
             fetchTherapists(); // Refetch therapists after save
+            // Optionally refetch report data if adding/updating affects the current report period
+            // handleGenerateReport();
         } catch (error) {
             showToast(error.response?.data?.message || 'Failed to save therapist.', 'error');
         } finally {
@@ -142,6 +167,8 @@ const TherapistsPage = () => {
             await api.delete(`/therapists/${selectedTherapist._id}`);
             showToast('Therapist deleted successfully!', 'success');
             fetchTherapists(); // Refetch therapists after delete
+             // Optionally refetch report data if deleting affects the current report period
+            // handleGenerateReport();
         } catch (error) {
             if (error.response?.data?.message.includes('expenses')) {
                  showToast('Cannot delete therapist with associated expenses. Please reassign or delete expenses first.', 'error');
@@ -162,8 +189,6 @@ const TherapistsPage = () => {
             showToast('Failed to toggle therapist status.', 'error');
         }
     };
-
-    // Recalculate therapists list on client side is removed, backend now handles calculation
 
     return (
         <div className="space-y-8">
@@ -202,7 +227,6 @@ const TherapistsPage = () => {
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fee %</th>
-                                {/* New Header for Total Expenses */}
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Expenses ({mgmtStartDate} to {mgmtEndDate})</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">Status</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -213,7 +237,6 @@ const TherapistsPage = () => {
                                 <tr key={therapist._id}>
                                     <td className="px-6 py-4 whitespace-nowrap">{therapist.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{therapist.feePercentage}%</td>
-                                    {/* Display Total Expenses */}
                                      <td className="px-6 py-4 whitespace-nowrap text-red-600">
                                          Rp{(therapist.totalExpensesInRange || 0).toLocaleString('id-ID')}
                                     </td>
@@ -231,7 +254,7 @@ const TherapistsPage = () => {
                             ))}
                             {therapists.length === 0 && !loading && (
                                 <tr>
-                                    <td colSpan="6" className="text-center py-4 text-gray-500">
+                                    <td colSpan="5" className="text-center py-4 text-gray-500"> {/* Adjusted colspan */}
                                         No therapists found.
                                     </td>
                                 </tr>
@@ -281,23 +304,33 @@ const TherapistsPage = () => {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rank</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Therapist Name</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Transactions</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Earnings (Fees)</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Fees</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Expenses Paid</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Earnings (Fees + Expenses)</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {loadingReport ? (
-                                    <tr><td colSpan="4" className="text-center py-4">Loading report...</td></tr>
+                                    <tr><td colSpan="6" className="text-center py-4">Loading report...</td></tr>
                                 ) : reportData.length > 0 ? (
                                     reportData.map((therapist, index) => (
                                         <tr key={therapist.therapistId}>
                                             <td className="px-6 py-4 whitespace-nowrap">{index + 1}</td>
                                             <td className="px-6 py-4 whitespace-nowrap">{therapist.name}</td>
                                             <td className="px-6 py-4 whitespace-nowrap">{therapist.transactionCount}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap">Rp{therapist.totalEarnings.toLocaleString('id-ID')}</td>
+                                            {/* --- Make Total Fees cell clickable --- */}
+                                            <td
+                                                className="px-6 py-4 whitespace-nowrap text-green-600 hover:underline cursor-pointer"
+                                                onClick={() => handleOpenFeeDetailsModal(therapist)} // <-- Add onClick
+                                            >
+                                                Rp{(therapist.totalFees || 0).toLocaleString('id-ID')}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-red-600">Rp{(therapist.totalExpenses || 0).toLocaleString('id-ID')}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap font-semibold">Rp{(therapist.totalEarnings || 0).toLocaleString('id-ID')}</td>
                                         </tr>
                                     ))
                                 ) : (
-                                    <tr><td colSpan="4" className="text-center py-4 text-gray-500">No data for the selected period.</td></tr>
+                                    <tr><td colSpan="6" className="text-center py-4 text-gray-500">No data for the selected period.</td></tr>
                                 )}
                             </tbody>
                         </table>
@@ -310,6 +343,14 @@ const TherapistsPage = () => {
             {isModalOpen && <TherapistModal therapist={selectedTherapist} onClose={handleCloseModals} onSave={handleSaveTherapist} />}
             {isConfirmOpen && <ConfirmationModal isOpen={isConfirmOpen} onClose={handleCloseModals} onConfirm={handleDeleteTherapist} title="Delete Therapist" message={`Are you sure you want to delete ${selectedTherapist?.name}? This may fail if the therapist has associated sales or expenses.`} />}
             {isExpenseModalOpen && therapistForExpenses && <TherapistExpenseModal therapist={therapistForExpenses} onClose={handleCloseModals} />}
+            {/* --- Render the new Fee Details Modal --- */}
+            {isFeeDetailsModalOpen && selectedTherapistForFeeDetails && (
+                <TherapistFeeDetailsModal
+                    therapistName={selectedTherapistForFeeDetails.name}
+                    sales={selectedTherapistForFeeDetails.contributingSales}
+                    onClose={handleCloseModals}
+                />
+            )}
         </div>
     );
 };

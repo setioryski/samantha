@@ -1,3 +1,4 @@
+// client/src/pages/CustomersPage.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { useToast } from '../context/ToastContext';
@@ -9,7 +10,7 @@ const CustomersPage = () => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const { showToast } = useToast();
-    
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -39,7 +40,7 @@ const CustomersPage = () => {
         setSelectedCustomer(customer);
         setIsConfirmOpen(true);
     };
-    
+
     const handleCloseModals = () => {
         setIsModalOpen(false);
         setIsConfirmOpen(false);
@@ -62,7 +63,7 @@ const CustomersPage = () => {
             handleCloseModals();
         }
     };
-    
+
     const handleDeleteCustomer = async () => {
         if (!selectedCustomer) return;
         try {
@@ -78,7 +79,9 @@ const CustomersPage = () => {
 
     const filteredCustomers = customers.filter(customer =>
         customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (customer.phone && customer.phone.includes(searchTerm))
+        (customer.phone && customer.phone.includes(searchTerm)) ||
+        // Add address to filter criteria
+        (customer.address && customer.address.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     if (loading) return <div>Loading customers...</div>;
@@ -95,8 +98,9 @@ const CustomersPage = () => {
             <div className="mb-4">
                 <input
                     type="text"
-                    placeholder="Search by name or phone..."
+                    placeholder="Search by name, phone, or address..." // Updated placeholder
                     className="w-full p-2 border rounded-md"
+                    value={searchTerm} // Controlled input
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
@@ -109,6 +113,8 @@ const CustomersPage = () => {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                            {/* --- ADDED ADDRESS HEADER --- */}
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
@@ -117,18 +123,30 @@ const CustomersPage = () => {
                         {filteredCustomers.map(customer => (
                             <tr key={customer._id}>
                                 <td className="px-6 py-4 whitespace-nowrap">{customer.name}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{customer.phone}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{customer.email}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">{customer.phone || 'N/A'}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">{customer.email || 'N/A'}</td>
+                                {/* --- ADDED ADDRESS DATA CELL --- */}
+                                {/* Use whitespace-normal to allow text wrapping */}
+                                <td className="px-6 py-4 whitespace-normal text-sm text-gray-500">{customer.address || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                                     <button onClick={() => handleOpenModal(customer)} className="text-indigo-600 hover:text-indigo-900">Edit</button>
                                     <button onClick={() => handleOpenConfirm(customer)} className="text-red-600 hover:text-red-900">Delete</button>
                                 </td>
                             </tr>
                         ))}
+                        {/* Display message if no customers match search */}
+                        {filteredCustomers.length === 0 && !loading && (
+                            <tr>
+                                {/* --- Adjusted colspan --- */}
+                                <td colSpan="5" className="text-center py-4 text-gray-500">
+                                    No customers found matching "{searchTerm}".
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>
-            
+
             {isModalOpen && <CustomerModal customer={selectedCustomer} onClose={handleCloseModals} onSave={handleSaveCustomer} />}
             {isConfirmOpen && <ConfirmationModal isOpen={isConfirmOpen} onClose={handleCloseModals} onConfirm={handleDeleteCustomer} title="Delete Customer" message={`Are you sure you want to delete ${selectedCustomer?.name}?`} />}
         </div>

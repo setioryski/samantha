@@ -311,7 +311,8 @@ exports.updateSaleToPaid = async (req, res) => {
 // @route   PUT /api/sales/:id/retract
 // @access  Private/Admin
 exports.retractSale = async (req, res) => {
-    const sale = await Sale.findById(req.params.id).populate('therapistId');
+    // Populate therapistId to get name and ID for expense deletion
+    const sale = await Sale.findById(req.params.id).populate('therapistId', 'name'); // Only populate name, ID is always there
 
     if (!sale) {
         return res.status(404).json({ message: 'Sale not found' });
@@ -333,27 +334,37 @@ exports.retractSale = async (req, res) => {
             }, { session });
         }
 
+        // --- MODIFICATION START ---
         // If the sale was paid, retract any associated expenses
         if (sale.paymentStatus === 'Paid') {
-            // Retract therapist fee (linked to therapist)
+            // Delete therapist fee expense (if therapist was associated)
             if (sale.therapistId) {
+                 // Use description and therapistId to uniquely identify the expense
                 await Expense.deleteOne({
+                    category: 'Therapist Fee',
                     description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`,
-                    therapistId: sale.therapistId._id // Ensure we delete the one linked to this therapist
+                    therapistId: sale.therapistId._id // Ensure we delete the one linked to THIS therapist for THIS sale
                 }, { session });
             }
-            // Retract transportation fee (potentially linked to therapist)
+
+            // Delete transportation fee expense (if it existed for this sale)
             if (sale.transportationFee && sale.transportationFee.amount > 0) {
+                 // Use description and potentially therapistId to uniquely identify the expense
                  await Expense.deleteOne({
+                    category: 'Transportation',
                     description: `Transportation fee for Sale ID: ${sale._id}`,
-                    // therapistId might be null or the therapist's ID, this covers both cases
+                    // therapistId might be null or the therapist's ID, this covers both cases if linked
                     therapistId: sale.therapistId ? sale.therapistId._id : null
                 }, { session });
             }
         }
+        // --- MODIFICATION END ---
 
 
         sale.status = 'Retracted';
+        // Optionally reset payment status/method if needed
+        // sale.paymentStatus = 'Unpaid';
+        // sale.paymentMethod = 'Pending';
         const updatedSale = await sale.save({ session });
         await session.commitTransaction();
 
@@ -505,44 +516,118 @@ exports.getTherapistReport = async (req, res) => {
     try {
         const { startDate, endDate } = req.query;
 
-        const matchStage = {
-            therapistId: { $ne: null },
-            status: 'Completed',
-            paymentStatus: 'Paid' // Only count paid sales for earnings
-        };
-
-        if (startDate && endDate) {
-            const start = new Date(startDate);
-            start.setHours(0, 0, 0, 0);
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            matchStage.createdAt = { $gte: start, $lte: end };
+        // Ensure dates are provided
+        if (!startDate || !endDate) {
+            return res.status(400).json({ message: 'Start date and end date are required for the report.' });
         }
 
-        const report = await Sale.aggregate([
-            { $match: matchStage },
-            { $unwind: '$items' }, // Unwind items to access therapistFee per item
-            { $group: {
-                _id: '$therapistId',
-                saleIds: { $addToSet: '$_id' }, // Collect unique sale IDs
-                totalEarnings: { $sum: '$items.therapistFee' } // Sum therapistFee from items
-            }},
-            { $lookup: { // Join with therapists collection
-                from: 'therapists',
-                localField: '_id',
-                foreignField: '_id',
-                as: 'therapistInfo'
-            }},
-            { $unwind: '$therapistInfo' }, // Deconstruct the therapistInfo array
-            { $project: { // Shape the final output
-                _id: 0,
-                therapistId: '$_id',
-                name: '$therapistInfo.name',
-                transactionCount: { $size: '$saleIds' }, // Get the count of unique sale IDs
-                totalEarnings: '$totalEarnings'
-            }},
-            { $sort: { totalEarnings: -1 } }, // Sort by earnings descending
-            { $limit: 10 } // Limit to top 10
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const dateMatch = {
+            $gte: start,
+            $lte: end
+        };
+
+        const report = await Therapist.aggregate([
+            // Stage 1: Match active therapists (optional, depending on requirements)
+            // { $match: { isActive: true } },
+
+            // Stage 2: Lookup paid sales within the date range
+            {
+                $lookup: {
+                    from: 'sales',
+                    let: { therapistId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: { $eq: ['$therapistId', '$$therapistId'] },
+                                status: 'Completed',
+                                paymentStatus: 'Paid',
+                                createdAt: dateMatch // Apply date range to sales
+                            }
+                        },
+                        { $unwind: '$items' } // Unwind items to access therapistFee
+                    ],
+                    as: 'paidSales'
+                }
+            },
+
+            // Stage 3: Lookup expenses within the date range
+            {
+                $lookup: {
+                    from: 'expenses',
+                    let: { therapistId: '$_id' },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: { $eq: ['$therapistId', '$$therapistId'] },
+                                date: dateMatch // Apply date range to expenses
+                            }
+                        }
+                    ],
+                    as: 'relatedExpenses'
+                }
+            },
+
+            // Stage 4: Calculate totals and project the required fields
+            {
+                $project: {
+                    _id: 1, // Keep therapist ID
+                    name: 1, // Keep therapist name
+                    totalFees: { $sum: '$paidSales.items.therapistFee' }, // Sum therapist fees from sales items
+                    totalExpenses: { $sum: '$relatedExpenses.amount' }, // Sum expenses
+                    // Count unique sales the therapist was involved in
+                    transactionCount: {
+                        $size: {
+                           $reduce: {
+                             input: "$paidSales",
+                             initialValue: [],
+                             in: { $setUnion: [ "$$value", [ "$$this._id" ] ] }
+                           }
+                        }
+                    }
+                }
+            },
+
+            // Stage 5: Calculate Net Total (Fees - Expenses)
+            {
+                $addFields: {
+                   netTotal: { $subtract: ['$totalFees', '$totalExpenses'] }
+                }
+            },
+
+            // Stage 6: Filter out therapists with zero activity (optional)
+             {
+                $match: {
+                    $or: [
+                        { totalFees: { $gt: 0 } },
+                        { totalExpenses: { $gt: 0 } }
+                    ]
+                }
+             },
+
+
+            // Stage 7: Sort by netTotal descending (or fees, depending on preference)
+            { $sort: { netTotal: -1 } },
+
+            // Stage 8: Limit to top 10 (if needed)
+            { $limit: 10 },
+
+             // Stage 9: Final reshape if needed (ensure correct field names for frontend)
+            {
+                $project: {
+                    _id: 0, // Exclude MongoDB _id
+                    therapistId: '$_id',
+                    name: '$name',
+                    transactionCount: '$transactionCount',
+                    totalFees: '$totalFees', // Renamed from totalEarnings
+                    totalExpenses: '$totalExpenses', // Added expense total
+                    netTotal: '$netTotal' // Added net total
+                }
+            }
         ]);
 
         res.json(report);
