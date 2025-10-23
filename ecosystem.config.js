@@ -6,7 +6,7 @@ const env = dotenv.config({ path: path.resolve(__dirname, 'server', '.env') }).p
 
 module.exports = {
   apps: [{
-    name: 'apothecary-pos',
+    name: 'samantha-pos',
     script: 'server/server.js',
     env: {
       NODE_ENV: 'production',
