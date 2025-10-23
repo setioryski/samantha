@@ -317,7 +317,7 @@ exports.retractSale = async (req, res) => {
     if (!sale) {
         return res.status(404).json({ message: 'Sale not found' });
     }
-    if (sale.status === 'Retracted') {
+    if (sale.status === 'Retracted') { //
         return res.status(400).json({ message: 'Sale has already been retracted' });
     }
 
@@ -326,42 +326,42 @@ exports.retractSale = async (req, res) => {
 
     try {
         // Restore stock for all retracted items
-        for (const item of sale.items) {
+        for (const item of sale.items) { //
             // Ensure productId is accessed correctly, might be populated
-            const productId = item.productId._id ? item.productId._id : item.productId;
+            const productId = item.productId._id ? item.productId._id : item.productId; //
             await Product.findByIdAndUpdate(productId, {
-                $inc: { stock: +item.quantity }
+                $inc: { stock: +item.quantity } //
             }, { session });
         }
 
         // --- MODIFICATION START ---
         // If the sale was paid, retract any associated expenses
-        if (sale.paymentStatus === 'Paid') {
+        if (sale.paymentStatus === 'Paid') { //
             // Delete therapist fee expense (if therapist was associated)
-            if (sale.therapistId) {
+            if (sale.therapistId) { //
                  // Use description and therapistId to uniquely identify the expense
-                await Expense.deleteOne({
-                    category: 'Therapist Fee',
-                    description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`,
+                await Expense.deleteOne({ //
+                    category: 'Therapist Fee', //
+                    description: `Therapist fee for ${sale.therapistId.name} on Sale ID: ${sale._id}`, //
                     therapistId: sale.therapistId._id // Ensure we delete the one linked to THIS therapist for THIS sale
                 }, { session });
             }
 
             // Delete transportation fee expense (if it existed for this sale)
-            if (sale.transportationFee && sale.transportationFee.amount > 0) {
+            if (sale.transportationFee && sale.transportationFee.amount > 0) { //
                  // Use description and potentially therapistId to uniquely identify the expense
-                 await Expense.deleteOne({
-                    category: 'Transportation',
-                    description: `Transportation fee for Sale ID: ${sale._id}`,
+                 await Expense.deleteOne({ //
+                    category: 'Transportation', //
+                    description: `Transportation fee for Sale ID: ${sale._id}`, //
                     // therapistId might be null or the therapist's ID, this covers both cases if linked
-                    therapistId: sale.therapistId ? sale.therapistId._id : null
+                    therapistId: sale.therapistId ? sale.therapistId._id : null //
                 }, { session });
             }
         }
         // --- MODIFICATION END ---
 
 
-        sale.status = 'Retracted';
+        sale.status = 'Retracted'; //
         // Optionally reset payment status/method if needed
         // sale.paymentStatus = 'Unpaid';
         // sale.paymentMethod = 'Pending';
