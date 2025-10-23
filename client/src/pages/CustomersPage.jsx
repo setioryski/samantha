@@ -56,7 +56,7 @@ const CustomersPage = () => {
                 await api.post('/customers', customerData);
                 showToast('Customer created successfully!', 'success');
             }
-            fetchCustomers();
+            fetchCustomers(); // Refetch after saving
         } catch (error) {
             showToast(error.response?.data?.message || 'Failed to save customer.', 'error');
         } finally {
@@ -69,7 +69,7 @@ const CustomersPage = () => {
         try {
             await api.delete(`/customers/${selectedCustomer._id}`);
             showToast('Customer deleted successfully!', 'success');
-            fetchCustomers();
+            fetchCustomers(); // Refetch after deleting
         } catch (error) {
             showToast(error.response?.data?.message || 'Failed to delete customer.', 'error');
         } finally {
@@ -77,10 +77,10 @@ const CustomersPage = () => {
         }
     };
 
+    // Filter customers based on search term (name, phone, or address)
     const filteredCustomers = customers.filter(customer =>
         customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (customer.phone && customer.phone.includes(searchTerm)) ||
-        // Add address to filter criteria
         (customer.address && customer.address.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
@@ -95,38 +95,37 @@ const CustomersPage = () => {
                 </button>
             </div>
 
+            {/* Search Input */}
             <div className="mb-4">
                 <input
                     type="text"
                     placeholder="Search by name, phone, or address..." // Updated placeholder
                     className="w-full p-2 border rounded-md"
-                    value={searchTerm} // Controlled input
+                    value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
             </div>
 
+            {/* Customer Table */}
             <div className="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
-                    {/* Table Head */}
                     <thead className="bg-gray-50">
                         <tr>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                            {/* --- ADDED ADDRESS HEADER --- */}
+                            {/* Address Header */}
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                         </tr>
                     </thead>
-                    {/* Table Body */}
                     <tbody className="bg-white divide-y divide-gray-200">
                         {filteredCustomers.map(customer => (
                             <tr key={customer._id}>
                                 <td className="px-6 py-4 whitespace-nowrap">{customer.name}</td>
                                 <td className="px-6 py-4 whitespace-nowrap">{customer.phone || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap">{customer.email || 'N/A'}</td>
-                                {/* --- ADDED ADDRESS DATA CELL --- */}
-                                {/* Use whitespace-normal to allow text wrapping */}
+                                {/* Address Data Cell */}
                                 <td className="px-6 py-4 whitespace-normal text-sm text-gray-500">{customer.address || 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                                     <button onClick={() => handleOpenModal(customer)} className="text-indigo-600 hover:text-indigo-900">Edit</button>
@@ -134,11 +133,10 @@ const CustomersPage = () => {
                                 </td>
                             </tr>
                         ))}
-                        {/* Display message if no customers match search */}
+                        {/* Message for no results */}
                         {filteredCustomers.length === 0 && !loading && (
                             <tr>
-                                {/* --- Adjusted colspan --- */}
-                                <td colSpan="5" className="text-center py-4 text-gray-500">
+                                <td colSpan="5" className="text-center py-4 text-gray-500"> {/* Adjusted colspan */}
                                     No customers found matching "{searchTerm}".
                                 </td>
                             </tr>
@@ -147,6 +145,7 @@ const CustomersPage = () => {
                 </table>
             </div>
 
+            {/* Modals */}
             {isModalOpen && <CustomerModal customer={selectedCustomer} onClose={handleCloseModals} onSave={handleSaveCustomer} />}
             {isConfirmOpen && <ConfirmationModal isOpen={isConfirmOpen} onClose={handleCloseModals} onConfirm={handleDeleteCustomer} title="Delete Customer" message={`Are you sure you want to delete ${selectedCustomer?.name}?`} />}
         </div>
